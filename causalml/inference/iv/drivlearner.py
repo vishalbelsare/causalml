@@ -9,24 +9,37 @@ from causalml.inference.meta.utils import (
     check_p_conditions,
     convert_pd_to_np,
 )
-from causalml.metrics import regression_metrics, classification_metrics
+from causalml.metrics import regression_metrics
 from causalml.propensity import compute_propensity_score
 from scipy.stats import norm
-from sklearn.model_selection import cross_val_predict, KFold
+from sklearn.model_selection import KFold
 from tqdm import tqdm
-from xgboost import XGBRegressor
+
+try:
+    from xgboost import XGBRegressor
+except ValueError as exc:
+    from causalml.exceptions import handle_xgboost_error
+
+    handle_xgboost_error(exc)
+
+from causalml.inference.serialization import SerializableLearner
 
 logger = logging.getLogger("causalml")
 
 
-class BaseDRIVLearner(object):
+class BaseDRIVLearner(SerializableLearner):
     """A parent class for DRIV-learner regressor classes.
 
     A DRIV-learner estimates endogenous treatment effects for compliers with machine learning models.
 
-    Details of DR-learner are available at Kennedy (2020) (https://arxiv.org/abs/2004.14497).
-    The DR moment condition for LATE comes from Chernozhukov et al (2018) (https://academic.oup.com/ectj/article/21/1/C1/5056401).
+    Details of DR-learner are available at `Kennedy (2020) <https://arxiv.org/abs/2004.14497>`_.
+    The DR moment condition for LATE comes from
+    `Chernozhukov et al (2018) <https://academic.oup.com/ectj/article/21/1/C1/5056401>`_.
     """
+
+    def _is_fitted(self):
+        """DRIV learners set t_groups during fit()."""
+        return hasattr(self, "t_groups")
 
     def __init__(
         self,
@@ -103,9 +116,9 @@ class BaseDRIVLearner(object):
             treatment (np.array or pd.Series): a treatment vector
             y (np.array or pd.Series): an outcome vector
             p (2-tuple of np.ndarray or pd.Series or dict, optional): The first (second) element corresponds to
-                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the single-treatment
-                case; or, a dictionary of treatment groups that map to propensity vectors of float (0,1). If None will run
-                ElasticNetPropensityModel() to generate the propensity scores.
+                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the
+                single-treatment case; or, a dictionary of treatment groups that map to propensity vectors of float
+                (0,1). If None will run ElasticNetPropensityModel() to generate the propensity scores.
             pZ (np.array or pd.Series, optional): an array of assignment probability of float (0,1); if None
                 will run ElasticNetPropensityModel() to generate the assignment probability score.
             seed (int): random seed for cross-fitting
@@ -194,8 +207,9 @@ class BaseDRIVLearner(object):
                     mask = (treatment_treat == group) | (
                         treatment_treat == self.control_name
                     )
-                    mask_1, mask_0 = mask & (assignment_treat == 1), mask & (
-                        assignment_treat == 0
+                    mask_1, mask_0 = (
+                        mask & (assignment_treat == 1),
+                        mask & (assignment_treat == 0),
                     )
                     cur_p_1[group], _ = compute_propensity_score(
                         X=X_treat[mask_1],
@@ -232,8 +246,9 @@ class BaseDRIVLearner(object):
             logger.info("Generate outcome regressions")
             for group in self.t_groups:
                 mask = (treatment_out == group) | (treatment_out == self.control_name)
-                mask_1, mask_0 = mask & (assignment_out == 1), mask & (
-                    assignment_out == 0
+                mask_1, mask_0 = (
+                    mask & (assignment_out == 1),
+                    mask & (assignment_out == 0),
                 )
                 self.models_mu_c[group][ifold].fit(X_out[mask_0], y_out[mask_0])
                 self.models_mu_t[group][ifold].fit(X_out[mask_1], y_out[mask_1])
@@ -265,7 +280,7 @@ class BaseDRIVLearner(object):
                     - p_0_filt
                 )
                 dr /= weight
-                self.models_tau[group][ifold].fit(X_filt, dr, sample_weight=weight ** 2)
+                self.models_tau[group][ifold].fit(X_filt, dr, sample_weight=weight**2)
 
     def predict(self, X, treatment=None, y=None, return_components=False, verbose=True):
         """Predict treatment effects.
@@ -299,7 +314,6 @@ class BaseDRIVLearner(object):
             if (y is not None) and (treatment is not None) and verbose:
                 mask = (treatment == group) | (treatment == self.control_name)
                 treatment_filt = treatment[mask]
-                X_filt = X[mask]
                 y_filt = y[mask]
                 w = (treatment_filt == group).astype(int)
 
@@ -342,9 +356,9 @@ class BaseDRIVLearner(object):
             treatment (np.array or pd.Series): a treatment vector
             y (np.array or pd.Series): an outcome vector
             p (2-tuple of np.ndarray or pd.Series or dict, optional): The first (second) element corresponds to
-                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the single-treatment
-                case; or, a dictionary of treatment groups that map to propensity vectors of float (0,1). If None will run
-                ElasticNetPropensityModel() to generate the propensity scores.
+                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the
+                single-treatment case; or, a dictionary of treatment groups that map to propensity vectors of float
+                (0,1). If None will run ElasticNetPropensityModel() to generate the propensity scores.
             pZ (np.array or pd.Series, optional): an array of assignment probability of float (0,1); if None
                 will run ElasticNetPropensityModel() to generate the assignment probability score.
             return_ci (bool): whether to return confidence intervals
@@ -439,6 +453,7 @@ class BaseDRIVLearner(object):
         bootstrap_size=10000,
         seed=None,
         calibrate=True,
+        pretrain=False,
     ):
         """Estimate the Average Treatment Effect (ATE) for compliers.
 
@@ -451,28 +466,47 @@ class BaseDRIVLearner(object):
             treatment (np.array or pd.Series): a treatment vector
             y (np.array or pd.Series): an outcome vector
             p (2-tuple of np.ndarray or pd.Series or dict, optional): The first (second) element corresponds to
-                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the single-treatment
-                case; or, a dictionary of treatment groups that map to propensity vectors of float (0,1). If None will run
-                ElasticNetPropensityModel() to generate the propensity scores.
+                unassigned (assigned) units. Each is an array of propensity scores of float (0,1) in the
+                single-treatment case; or, a dictionary of treatment groups that map to propensity vectors of float
+                (0,1). If None will run ElasticNetPropensityModel() to generate the propensity scores.
             pZ (np.array or pd.Series, optional): an array of assignment probability of float (0,1); if None
                 will run ElasticNetPropensityModel() to generate the assignment probability score.
             bootstrap_ci (bool): whether run bootstrap for confidence intervals
             n_bootstraps (int): number of bootstrap iterations
             bootstrap_size (int): number of samples per bootstrap
             seed (int): random seed for cross-fitting
+            pretrain (bool): whether a model has been fit, default False. When True
+                the fitted models are reused instead of being refit, so these rows
+                can be ones they never saw. ``p`` is required in that case: the
+                propensity :meth:`fit` stored belongs to the rows it was fit on, and
+                the standard error needs the propensity of the rows estimated here.
+                ``assignment`` and ``pZ`` are only used to fit, so they go unused.
         Returns:
             The mean and confidence interval (LB, UB) of the ATE estimate.
         """
-        te, yhat_cs, yhat_ts = self.fit_predict(
-            X,
-            assignment,
-            treatment,
-            y,
-            p,
-            return_components=True,
-            seed=seed,
-            calibrate=calibrate,
-        )
+        if pretrain:
+            if not hasattr(self, "t_groups"):
+                raise ValueError(
+                    "No fitted model found. Call fit() before estimate_ate(pretrain=True)."
+                )
+            if p is None:
+                raise ValueError(
+                    "estimate_ate(pretrain=True) requires p, the propensity of the rows "
+                    "passed here. The propensity stored by fit() belongs to the rows it "
+                    "was fit on, and the standard error indexes it by these rows."
+                )
+            te, yhat_cs, yhat_ts = self.predict(X, treatment, y, return_components=True)
+        else:
+            te, yhat_cs, yhat_ts = self.fit_predict(
+                X,
+                assignment,
+                treatment,
+                y,
+                p,
+                return_components=True,
+                seed=seed,
+                calibrate=calibrate,
+            )
         X, assignment, treatment, y = convert_pd_to_np(X, assignment, treatment, y)
 
         if p is None:
@@ -524,14 +558,14 @@ class BaseDRIVLearner(object):
 
             part_1 = (
                 (y_filt_1 - yhat_1).var()
-                + _ate ** 2 * (treatment_filt_1 - prob_treatment_1).var()
+                + _ate**2 * (treatment_filt_1 - prob_treatment_1).var()
                 - 2
                 * _ate
                 * (y_filt_1 * treatment_filt_1 - yhat_1 * prob_treatment_1).mean()
             )
             part_0 = (
                 (y_filt_0 - yhat_0).var()
-                + _ate ** 2 * (treatment_filt_0 - prob_treatment_0).var()
+                + _ate**2 * (treatment_filt_0 - prob_treatment_0).var()
                 - 2
                 * _ate
                 * (y_filt_0 * treatment_filt_0 - yhat_0 * prob_treatment_0).mean()
@@ -548,7 +582,7 @@ class BaseDRIVLearner(object):
             # SE formula is based on the lower bound formula (9) from Frölich, Markus. 2006.
             # "Nonparametric IV estimation of local average treatment effects wth covariates."
             # Journal of Econometrics.
-            se = np.sqrt((part_1 / w + part_2 / (1 - w)) + part_2) / Gamma
+            se = np.sqrt((part_1 / w + part_0 / (1 - w)) + part_2) / Gamma
 
             _ate_lb = _ate - se * norm.ppf(1 - self.ate_alpha / 2)
             _ate_ub = _ate + se * norm.ppf(1 - self.ate_alpha / 2)
@@ -636,13 +670,16 @@ class BaseDRIVLearner(object):
         based on a specified method.
 
         Currently supported methods are:
-            - auto (calculates importance based on estimator's default implementation of feature importance;
-                    estimator must be tree-based)
-                    Note: if none provided, it uses lightgbm's LGBMRegressor as estimator, and "gain" as
-                    importance type
-            - permutation (calculates importance based on mean decrease in accuracy when a feature column is permuted;
-                           estimator can be any form)
-        Hint: for permutation, downsample data for better performance especially if X.shape[1] is large
+
+            - auto (calculates importance based on estimator's default implementation
+              of feature importance; estimator must be tree-based).
+              Note: if none provided, it uses lightgbm's LGBMRegressor as estimator,
+              and "gain" as importance type.
+            - permutation (calculates importance based on mean decrease in accuracy
+              when a feature column is permuted; estimator can be any form).
+
+        Hint: for permutation, downsample data for better performance especially if
+        X.shape[1] is large.
 
         Args:
             X (np.matrix or np.array or pd.Dataframe): a feature matrix
@@ -706,13 +743,16 @@ class BaseDRIVLearner(object):
         based on a specified method.
 
         Currently supported methods are:
-            - auto (calculates importance based on estimator's default implementation of feature importance;
-                    estimator must be tree-based)
-                    Note: if none provided, it uses lightgbm's LGBMRegressor as estimator, and "gain" as
-                    importance type
-            - permutation (calculates importance based on mean decrease in accuracy when a feature column is permuted;
-                           estimator can be any form)
-        Hint: for permutation, downsample data for better performance especially if X.shape[1] is large
+
+            - auto (calculates importance based on estimator's default implementation
+              of feature importance; estimator must be tree-based).
+              Note: if none provided, it uses lightgbm's LGBMRegressor as estimator,
+              and "gain" as importance type.
+            - permutation (calculates importance based on mean decrease in accuracy
+              when a feature column is permuted; estimator can be any form).
+
+        Hint: for permutation, downsample data for better performance especially if
+        X.shape[1] is large.
 
         Args:
             X (np.matrix or np.array or pd.Dataframe): a feature matrix
@@ -747,7 +787,7 @@ class BaseDRIVLearner(object):
         model_tau_feature=None,
         features=None,
         shap_dict=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Plots distribution of shapley values.
@@ -786,7 +826,7 @@ class BaseDRIVLearner(object):
         features=None,
         shap_dict=None,
         interaction_idx="auto",
-        **kwargs
+        **kwargs,
     ):
         """
         Plots dependency of shapley values for a specified feature, colored by an interaction feature.
@@ -829,7 +869,7 @@ class BaseDRIVLearner(object):
             feature_idx=feature_idx,
             shap_dict=shap_dict,
             interaction_idx=interaction_idx,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -854,7 +894,6 @@ class BaseDRIVRegressor(BaseDRIVLearner):
                 groups
             control_outcome_learner (optional): a model to estimate outcomes in the control group
             treatment_outcome_learner (optional): a model to estimate outcomes in the treatment group
-            control_effect_learner (optional): a model to estimate treatment effects in the control group
             treatment_effect_learner (optional): a model to estimate treatment effects in the treatment group. It needs
                 to take `sample_weight` as an input argument in `fit()`.
             ate_alpha (float, optional): the confidence level alpha of the ATE estimate

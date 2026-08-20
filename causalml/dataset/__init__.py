@@ -1,3 +1,5 @@
+from ._base import get_data_home, clear_data_dir
+from ._benchmarks import fetch_lalonde, fetch_ihdp, fetch_twins
 from .regression import synthetic_data
 from .regression import simulate_nuisance_and_easy_treatment
 from .regression import simulate_randomized_trial
@@ -5,6 +7,7 @@ from .regression import simulate_easy_propensity_difficult_baseline
 from .regression import simulate_unrelated_treatment_control
 from .regression import simulate_hidden_confounder
 from .classification import make_uplift_classification
+from .classification import make_uplift_classification_logistic
 
 from .synthetic import get_synthetic_preds, get_synthetic_preds_holdout
 from .synthetic import get_synthetic_summary, get_synthetic_summary_holdout

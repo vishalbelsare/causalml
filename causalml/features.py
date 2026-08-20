@@ -4,11 +4,10 @@ import pandas as pd
 from scipy import sparse
 from sklearn import base
 
+logger = logging.getLogger("causalml")
 
-logger = logging.getLogger('causalml')
 
-
-NAN_INT = -98765    # A random integer to impute missing values with
+NAN_INT = -98765  # A random integer to impute missing values with
 
 
 class LabelEncoder(base.BaseEstimator):
@@ -32,7 +31,7 @@ class LabelEncoder(base.BaseEstimator):
         self.min_obs = min_obs
 
     def __repr__(self):
-        return ('LabelEncoder(min_obs={})').format(self.min_obs)
+        return ("LabelEncoder(min_obs={})").format(self.min_obs)
 
     def _get_label_encoder_and_max(self, x):
         """Return a mapping from values and its maximum of a column to integer labels.
@@ -57,7 +56,9 @@ class LabelEncoder(base.BaseEstimator):
         # that appear less than min_obs.
         offset = 0 if n_uniq == n_uniq_new else 1
 
-        label_encoder = pd.Series(np.arange(n_uniq_new) + offset, index=label_count.index)
+        label_encoder = pd.Series(
+            np.arange(n_uniq_new) + offset, index=label_count.index
+        )
         max_label = label_encoder.max()
         label_encoder = label_encoder.to_dict()
 
@@ -80,8 +81,10 @@ class LabelEncoder(base.BaseEstimator):
         self.label_maxes = [None] * X.shape[1]
 
         for i, col in enumerate(X.columns):
-            self.label_encoders[i], self.label_maxes[i] = \
-                self._get_label_encoder_and_max(X[col])
+            (
+                self.label_encoders[i],
+                self.label_maxes[i],
+            ) = self._get_label_encoder_and_max(X[col])
 
         return self
 
@@ -94,9 +97,9 @@ class LabelEncoder(base.BaseEstimator):
         Returns:
             X (pandas.DataFrame): label encoded columns
         """
-
+        X = X.copy()
         for i, col in enumerate(X.columns):
-            X.loc[:, col] = self._transform_col(X[col], i)
+            X[col] = self._transform_col(X[col], i).astype(float)
 
         return X
 
@@ -109,15 +112,23 @@ class LabelEncoder(base.BaseEstimator):
         Returns:
             X (pandas.DataFrame): label encoded columns
         """
-
+        X = X.copy()
         self.label_encoders = [None] * X.shape[1]
         self.label_maxes = [None] * X.shape[1]
 
         for i, col in enumerate(X.columns):
-            self.label_encoders[i], self.label_maxes[i] = \
-                self._get_label_encoder_and_max(X[col])
+            (
+                self.label_encoders[i],
+                self.label_maxes[i],
+            ) = self._get_label_encoder_and_max(X[col])
 
-            X.loc[:, col] = X[col].fillna(NAN_INT).map(self.label_encoders[i]).fillna(0)
+            X[col] = (
+                X[col]
+                .fillna(NAN_INT)
+                .map(self.label_encoders[i])
+                .fillna(0)
+                .astype(float)
+            )
 
         return X
 
@@ -144,7 +155,7 @@ class OneHotEncoder(base.BaseEstimator):
         self.label_encoder = LabelEncoder(min_obs)
 
     def __repr__(self):
-        return ('OneHotEncoder(min_obs={})').format(self.min_obs)
+        return ("OneHotEncoder(min_obs={})").format(self.min_obs)
 
     def _transform_col(self, x, i):
         """Encode one categorical column into sparse matrix with one-hot-encoding.
@@ -167,8 +178,9 @@ class OneHotEncoder(base.BaseEstimator):
         j = labels[labels > 0] - 1  # column index starts from 0
 
         if len(i) > 0:
-            return sparse.coo_matrix((np.ones_like(i), (i, j)),
-                                     shape=(x.shape[0], label_max))
+            return sparse.coo_matrix(
+                (np.ones_like(i), (i, j)), shape=(x.shape[0], label_max)
+            )
         else:
             # if there is no non-zero value, return no matrix
             return None
@@ -189,18 +201,22 @@ class OneHotEncoder(base.BaseEstimator):
                                              variables into dummy variables
         """
 
+        X_new = None
         for i, col in enumerate(X.columns):
             X_col = self._transform_col(X[col], i)
             if X_col is not None:
-                if i == 0:
+                if X_new is None:
                     X_new = X_col
                 else:
                     X_new = sparse.hstack((X_new, X_col))
 
-            logger.debug('{} --> {} features'.format(
-                col, self.label_encoder.label_maxes[i])
+            logger.debug(
+                "{} --> {} features".format(col, self.label_encoder.label_maxes[i])
             )
 
+        assert (
+            X_new is not None
+        ), "no column was transformed, please check your dataframe input"
         return X_new
 
     def fit_transform(self, X, y=None):
@@ -227,25 +243,43 @@ def load_data(data, features, transformations={}):
         transformation (dict of (str, func)): transformations to be applied to features
 
     Returns:
-        X (numpy.matrix): a feature matrix
+        X (numpy.ndarray): a feature matrix
     """
 
     df = data[features].copy()
 
     bool_cols = [col for col in df.columns if df[col].dtype == bool]
-    df.loc[:, bool_cols] = df[bool_cols].astype(np.int8)
+    df.loc[:, bool_cols] = df[bool_cols].astype(int)
 
     for col, transformation in transformations.items():
-        logger.info('Applying {} to {}'.format(transformation.__name__, col))
+        logger.info("Applying {} to {}".format(transformation.__name__, col))
         df[col] = df[col].apply(transformation)
 
-    cat_cols = [col for col in features if df[col].dtype == np.object]
+    cat_cols = [col for col in features if not pd.api.types.is_numeric_dtype(df[col])]
     num_cols = [col for col in features if col not in cat_cols]
 
-    logger.info('Applying one-hot-encoding to {}'.format(cat_cols))
-    ohe = OneHotEncoder(min_obs=df.shape[0] * 0.001)
-    X_cat = ohe.fit_transform(df[cat_cols]).todense()
+    X_cat = None
+    if cat_cols:
+        logger.info("Applying one-hot-encoding to {}".format(cat_cols))
+        ohe = OneHotEncoder(min_obs=df.shape[0] * 0.001)
+        try:
+            X_cat = ohe.fit_transform(df[cat_cols])
+        except AssertionError:
+            # OneHotEncoder asserts when no column produced a non-empty
+            # encoding: every categorical column holds a single value, or all
+            # of their levels fall below min_obs. Under python -O that
+            # assertion is stripped and transform returns None instead of
+            # raising, so both outcomes end up here.
+            X_cat = None
 
-    X = np.hstack([df[num_cols].values, X_cat])
+        if X_cat is None:
+            logger.info("No categorical column produced an encoding")
+        else:
+            X_cat = X_cat.toarray()
+
+    if X_cat is None:
+        X = df[num_cols].values
+    else:
+        X = np.hstack([df[num_cols].values, X_cat])
 
     return X

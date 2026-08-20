@@ -2,58 +2,193 @@
 Installation
 ============
 
-Installation with ``conda`` is recommended. ``conda`` environment files for Python 3.6, 3.7, 3.8 and 3.9 are available in the repository. To use models under the ``inference.tf`` module (e.g. ``DragonNet``), additional dependency of ``tensorflow`` is required. For detailed instructions, see below.
+Installation with ``conda`` or ``pip`` is recommended.  Developers can follow the **Install from source** instructions below.  If building from source, consider doing so within a conda environment and then exporting the environment for reproducibility.
+
+To use models under the ``inference.tf``, ``inference.torch`` or ``inference.jax`` module (e.g. ``DragonNet`` or ``CEVAE``), additional dependency of ``tensorflow``, ``torch`` or ``jax`` is required. For detailed instructions, see below.
+
+System Requirements
+-------------------
+
+**Python Version:** Python 3.11 or later is required.
+
+**Linux Distributions:** Pre-built binary wheels require a Linux distribution with glibc 2.28 or later:
+
+* **Ubuntu:** 20.04 LTS or later
+* **RHEL/CentOS:** 8 or later
+* **Debian:** 10 (Buster) or later
+* **Fedora:** 32 or later
+
+.. note::
+   For older Linux distributions (e.g., RHEL 7, Ubuntu 16.04, Ubuntu 18.04), you will need to build CausalML from source. See **Install from source** below.
+
+**macOS and Windows:** All recent versions are supported.
+
+.. note::
+   On macOS, ``xgboost`` and ``lightgbm`` require the OpenMP runtime (``libomp``),
+   which is not included by default. Without it, importing CausalML modules that
+   use XGBoost can fail when the XGBoost native library cannot be loaded.
+   Install it via Homebrew:
+
+   .. code-block:: bash
+
+      brew install libomp
+
+   or via conda-forge:
+
+   .. code-block:: bash
+
+      conda install -c conda-forge llvm-openmp
 
 Install using ``conda``
 -----------------------
 
-This will create a new ``conda`` virtual environment named ``causalml-[tf-]py3x``, where ``x`` is in ``[6, 7, 8, 9]``. e.g. ``causalml-py37`` or ``causalml-tf-py38``. If you want to change the name of the environment, update the relevant YAML file in ``envs/``.
+Install ``conda``
+^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-    $ git clone https://github.com/uber/causalml.git
-    $ cd causalml/envs/
-    $ conda env create -f environment-py38.yml	# for the virtual environment with Python 3.8 and CausalML
-    $ conda activate causalml-py38
-    (causalml-py38)
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh -b
+    source miniconda3/bin/activate
+    conda init
+    source ~/.bashrc
 
-To install ``causalml`` with ``tensorflow`` using ``conda``, use a relevant ``causalml-[tf-]py3x`` environment file as follows:
+Install from ``conda-forge``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Directly install from the ``conda-forge`` channel using ``conda``.
 
 .. code-block:: bash
 
-    $ git clone https://github.com/uber/causalml.git
-    $ cd causalml/envs/
-    $ conda env create -f environment-tf-py38.yml	# for the virtual environment with Python 3.8 and CausalML
-    $ conda activate causalml-tf-py38
-    (causalml-tf-py38) pip install -U numpy			# this step is necessary to fix [#338](https://github.com/uber/causalml/issues/338)
+    conda install -c conda-forge causalml
 
-Install using ``pip``
+Install from ``PyPI``
 ---------------------
 
 .. code-block:: bash
 
-    $ git clone https://github.com/uber/causalml.git
-    $ cd causalml
-    $ pip install -r requirements.txt
-    $ pip install causalml
+    pip install causalml
 
-To install ``causalml`` with ``tensorflow`` using ``pip``, use ``causalml[tf]`` as follows:
+Install ``causalml`` with ``tensorflow`` for ``DragonNet`` from ``PyPI``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-    $ git clone https://github.com/uber/causalml.git
-    $ cd causalml
-    $ pip install -r requirements-tf.txt
-    $ pip install causalml[tf]
-    $ pip install -U numpy							# this step is necessary to fix [#338](https://github.com/uber/causalml/issues/338)
+    pip install causalml[tf]
 
+Install ``causalml`` with ``torch`` for ``CEVAE`` from ``PyPI``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    pip install causalml[torch]
+
+Install ``causalml`` with ``jax`` for ``DragonNet`` or ``CEVAE`` from ``PyPI``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    pip install causalml[jax]
+
+
+Install using `uv <https://github.com/astral-sh/uv/blob/main/README.md>`_
+-------------------------------------------------------------------------
+
+.. code-block:: bash
+
+    uv init
+    uv add causalml
+
+Install ``causalml`` with ``tensorflow`` for ``DragonNet`` using `uv <https://github.com/astral-sh/uv/blob/main/README.md>`_
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    uv add "causalml[tf]"
+
+Install ``causalml`` with ``torch`` for ``CEVAE`` using `uv <https://github.com/astral-sh/uv/blob/main/README.md>`_
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    uv add "causalml[torch]"
+
+Install ``causalml`` with ``jax`` for ``DragonNet`` or ``CEVAE`` using `uv <https://github.com/astral-sh/uv/blob/main/README.md>`_
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    uv add "causalml[jax]"
+    
+
+
+
+
+    
 Install from source
 -------------------
 
+[Optional] If you don't have Graphviz installed, you can install it using ``conda``, ``brew`` (on MacOS), or ``apt`` (on Linux).
+
 .. code-block:: bash
 
-    $ git clone https://github.com/uber/causalml.git
-    $ cd causalml
-    $ pip install -r requirements.txt
-    $ python setup.py build_ext --inplace
-    $ python setup.py install
+    conda install python-graphviz
+    brew install graphviz           # MacOS
+    sudo apt-get install graphviz   # Linux
+
+First, clone the repository and install the package:
+
+.. code-block:: bash
+
+    git clone https://github.com/uber/causalml.git
+    cd causalml
+    pip install -e .
+
+with ``tensorflow`` for ``DragonNet``:
+
+.. code-block:: bash
+
+    pip install -e ".[tf]"
+
+with ``torch`` for ``CEVAE``:
+
+.. code-block:: bash
+
+    pip install -e ".[torch]"
+
+with ``jax`` for ``DragonNet`` or ``CEVAE``:
+
+.. code-block:: bash
+
+    pip install -e ".[jax]"
+
+=======
+
+Windows
+-------
+
+See content in https://github.com/uber/causalml/issues/678
+
+
+Running Tests
+-------------
+
+Make sure pytest is installed before attempting to run tests.
+
+.. code-block:: bash
+
+    pip install -e ".[test]"
+
+Run all tests with:
+
+.. code-block:: bash
+
+    pytest -vs tests/ --cov causalml/
+
+Add ``--runtf``, ``--runtorch`` and/or ``--runjax`` to run optional tensorflow/torch/jax tests which will be skipped by default.
+
+You can also run tests via make:
+
+.. code-block:: bash
+
+    make test

@@ -1,48 +1,97 @@
-
 import pandas as pd
+import pytest
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
 from causalml.dataset import synthetic_data
-from causalml.inference.meta import BaseXLearner
+from causalml.inference.meta import (
+    BaseSLearner,
+    BaseTLearner,
+    BaseDRLearner,
+    XGBTRegressor,
+    BaseXLearner,
+    BaseRLearner,
+)
 from causalml.metrics.sensitivity import Sensitivity
-from causalml.metrics.sensitivity import SensitivityPlaceboTreatment, SensitivityRandomCause
-from causalml.metrics.sensitivity import SensitivityRandomReplace, SensitivitySelectionBias
-from causalml.metrics.sensitivity import one_sided, alignment, one_sided_att, alignment_att
+from causalml.metrics.sensitivity import (
+    SensitivityPlaceboTreatment,
+    SensitivityRandomCause,
+)
+from causalml.metrics.sensitivity import (
+    SensitivityRandomReplace,
+    SensitivitySelectionBias,
+    SensitivityMSM,
+)
+from causalml.metrics.sensitivity import (
+    one_sided,
+    alignment,
+    one_sided_att,
+    alignment_att,
+)
 
-from .const import TREATMENT_COL, SCORE_COL, OUTCOME_COL, NUM_FEATURES
+from .const import (
+    TREATMENT_COL,
+    SCORE_COL,
+    OUTCOME_COL,
+    NUM_FEATURES,
+    RANDOM_SEED,
+)
 
 
-def test_Sensitivity():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+@pytest.mark.parametrize(
+    "learner",
+    [
+        BaseSLearner(LinearRegression()),
+        BaseTLearner(LinearRegression()),
+        XGBTRegressor(),
+        BaseXLearner(LinearRegression()),
+        BaseRLearner(LinearRegression()),
+    ],
+)
+def test_Sensitivity(learner):
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
 
     # generate the dataset format for sensitivity analysis
-    INFERENCE_FEATURES = ['feature_' + str(i) for i in range(NUM_FEATURES)]
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
     df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
     df[TREATMENT_COL] = treatment
     df[OUTCOME_COL] = y
     df[SCORE_COL] = e
 
     # calling the Base XLearner class and return the sensitivity analysis summary report
-    learner = BaseXLearner(LinearRegression())
-    sens = Sensitivity(df=df, inference_features=INFERENCE_FEATURES, p_col=SCORE_COL,
-                       treatment_col=TREATMENT_COL, outcome_col=OUTCOME_COL, learner=learner)
+    sens = Sensitivity(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+    )
 
     # check the sensitivity summary report
-    sens_summary = sens.sensitivity_analysis(methods=['Placebo Treatment',
-                                                      'Random Cause',
-                                                      'Subset Data',
-                                                      'Random Replace',
-                                                      'Selection Bias'], sample_size=0.5)
+    sens_summary = sens.sensitivity_analysis(
+        methods=[
+            "Placebo Treatment",
+            "Random Cause",
+            "Subset Data",
+            "Random Replace",
+            "Selection Bias",
+        ],
+        sample_size=0.5,
+    )
 
     print(sens_summary)
 
 
 def test_SensitivityPlaceboTreatment():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
 
     # generate the dataset format for sensitivity analysis
-    INFERENCE_FEATURES = ['feature_' + str(i) for i in range(NUM_FEATURES)]
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
     df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
     df[TREATMENT_COL] = treatment
     df[OUTCOME_COL] = y
@@ -50,18 +99,54 @@ def test_SensitivityPlaceboTreatment():
 
     # calling the Base XLearner class and return the sensitivity analysis summary report
     learner = BaseXLearner(LinearRegression())
-    sens = SensitivityPlaceboTreatment(df=df, inference_features=INFERENCE_FEATURES, p_col=SCORE_COL,
-                                       treatment_col=TREATMENT_COL, outcome_col=OUTCOME_COL, learner=learner)
+    sens = SensitivityPlaceboTreatment(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+    )
 
-    sens_summary = sens.summary(method='Random Cause')
+    sens_summary = sens.summary(method="Random Cause")
+    print(sens_summary)
+
+
+def test_SensitivityPlaceboTreatment_string_labels():
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
+
+    # Convert binary treatment to string labels
+    treatment_str = np.where(treatment == 1, "treatment1", "control")
+
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
+    df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
+    df[TREATMENT_COL] = treatment_str
+    df[OUTCOME_COL] = y
+    df[SCORE_COL] = e
+
+    learner = BaseXLearner(LinearRegression(), control_name="control")
+    sens = SensitivityPlaceboTreatment(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+    )
+
+    sens_summary = sens.summary(method="Placebo Treatment")
     print(sens_summary)
 
 
 def test_SensitivityRandomCause():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
 
     # generate the dataset format for sensitivity analysis
-    INFERENCE_FEATURES = ['feature_' + str(i) for i in range(NUM_FEATURES)]
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
     df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
     df[TREATMENT_COL] = treatment
     df[OUTCOME_COL] = y
@@ -69,18 +154,26 @@ def test_SensitivityRandomCause():
 
     # calling the Base XLearner class and return the sensitivity analysis summary report
     learner = BaseXLearner(LinearRegression())
-    sens = SensitivityRandomCause(df=df, inference_features=INFERENCE_FEATURES, p_col=SCORE_COL,
-                                  treatment_col=TREATMENT_COL, outcome_col=OUTCOME_COL, learner=learner)
+    sens = SensitivityRandomCause(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+    )
 
-    sens_summary = sens.summary(method='Random Cause')
+    sens_summary = sens.summary(method="Random Cause")
     print(sens_summary)
 
 
 def test_SensitivityRandomReplace():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
 
     # generate the dataset format for sensitivity analysis
-    INFERENCE_FEATURES = ['feature_' + str(i) for i in range(NUM_FEATURES)]
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
     df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
     df[TREATMENT_COL] = treatment
     df[OUTCOME_COL] = y
@@ -88,19 +181,28 @@ def test_SensitivityRandomReplace():
 
     # calling the Base XLearner class and return the sensitivity analysis summary report
     learner = BaseXLearner(LinearRegression())
-    sens = SensitivityRandomReplace(df=df, inference_features=INFERENCE_FEATURES, p_col=SCORE_COL,
-                                  treatment_col=TREATMENT_COL, outcome_col=OUTCOME_COL, learner=learner,
-                                  sample_size=0.9, replaced_feature='feature_0')
+    sens = SensitivityRandomReplace(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+        sample_size=0.9,
+        replaced_feature="feature_0",
+    )
 
-    sens_summary = sens.summary(method='Random Replace')
+    sens_summary = sens.summary(method="Random Replace")
     print(sens_summary)
 
 
 def test_SensitivitySelectionBias():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
 
     # generate the dataset format for sensitivity analysis
-    INFERENCE_FEATURES = ['feature_' + str(i) for i in range(NUM_FEATURES)]
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
     df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
     df[TREATMENT_COL] = treatment
     df[OUTCOME_COL] = y
@@ -108,8 +210,16 @@ def test_SensitivitySelectionBias():
 
     # calling the Base XLearner class and return the sensitivity analysis summary report
     learner = BaseXLearner(LinearRegression())
-    sens = SensitivitySelectionBias(df, INFERENCE_FEATURES, p_col=SCORE_COL, treatment_col=TREATMENT_COL,
-                                    outcome_col=OUTCOME_COL, learner=learner, confound='alignment', alpha_range=None)
+    sens = SensitivitySelectionBias(
+        df,
+        INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+        confound="alignment",
+        alpha_range=None,
+    )
 
     lls_bias_alignment, partial_rsqs_bias_alignment = sens.causalsens()
     print(lls_bias_alignment, partial_rsqs_bias_alignment)
@@ -118,8 +228,54 @@ def test_SensitivitySelectionBias():
     sens.plot(lls_bias_alignment, ci=True)
 
 
+def test_SensitivitySelectionBias_summary_ate():
+    # summary() used to assign the alpha == 0 "New ATE" as a Series, so pandas
+    # aligned it on index and every row other than alpha == 0 came back NaN.
+    np.random.seed(RANDOM_SEED)
+
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
+
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
+    df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
+    df[TREATMENT_COL] = treatment
+    df[OUTCOME_COL] = y
+    df[SCORE_COL] = e
+
+    learner = BaseXLearner(LinearRegression())
+    sens = SensitivitySelectionBias(
+        df,
+        INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+        confound="alignment",
+        alpha_range=None,
+    )
+
+    summary = sens.summary()
+
+    assert not summary["ATE"].isna().any()
+
+    # summary() drops the alpha column, but Method carries the alpha it was
+    # built from, so the alpha == 0 row is still identifiable.
+    alphas = (
+        summary["Method"]
+        .str.extract(r"alpha@(-?[\d.eE+-]+),", expand=False)
+        .astype(float)
+    )
+    baseline = summary.loc[alphas == 0, "New ATE"]
+    assert len(baseline) == 1
+
+    assert np.allclose(summary["ATE"], baseline.values[0])
+
+
 def test_one_sided():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
     alpha = np.quantile(y, 0.25)
     adj = one_sided(alpha, e, treatment)
 
@@ -127,7 +283,9 @@ def test_one_sided():
 
 
 def test_alignment():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
     alpha = np.quantile(y, 0.25)
     adj = alignment(alpha, e, treatment)
 
@@ -135,7 +293,9 @@ def test_alignment():
 
 
 def test_one_sided_att():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
     alpha = np.quantile(y, 0.25)
     adj = one_sided_att(alpha, e, treatment)
 
@@ -143,8 +303,80 @@ def test_one_sided_att():
 
 
 def test_alignment_att():
-    y, X, treatment, tau, b, e = synthetic_data(mode=1, n=100000, p=NUM_FEATURES, sigma=1.0)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
     alpha = np.quantile(y, 0.25)
     adj = alignment_att(alpha, e, treatment)
 
     assert y.shape == adj.shape
+
+
+@pytest.mark.parametrize(
+    "learner",
+    [
+        BaseSLearner(LinearRegression()),
+        BaseTLearner(LinearRegression()),
+        BaseDRLearner(LinearRegression()),
+        XGBTRegressor(),
+    ],
+)
+def test_SensitivityMSM(learner):
+    np.random.seed(RANDOM_SEED)
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
+    df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
+    df[TREATMENT_COL] = treatment
+    df[OUTCOME_COL] = y
+    df[SCORE_COL] = e
+
+    sens = SensitivityMSM(
+        df=df,
+        inference_features=INFERENCE_FEATURES,
+        p_col=SCORE_COL,
+        treatment_col=TREATMENT_COL,
+        outcome_col=OUTCOME_COL,
+        learner=learner,
+    )
+
+    bounds_df = sens.get_msm_bounds(gamma=[1.0, 1.5, 2.0, 3.0])
+    assert list(bounds_df.columns) == ["gamma", "ate_lower", "ate_upper"]
+
+    # Gamma=1 should collapse to a (near-)point estimate, and that point
+    # estimate should be close to the true ATE (tau.mean()) — catches
+    # cases where mu0_hat/mu1_hat are misread and AIPW silently degenerates
+    # to something else that happens to still look plausible.
+    row1 = bounds_df[bounds_df.gamma == 1.0].iloc[0]
+    assert abs(row1.ate_upper - row1.ate_lower) < 1e-6
+    assert abs(row1.ate_lower - tau.mean()) < 0.05
+
+    # bounds should widen monotonically with Gamma
+    widths = (bounds_df.ate_upper - bounds_df.ate_lower).values
+    assert np.all(np.diff(widths) >= -1e-9)
+
+
+def test_SensitivityMSM_unsupported_learner():
+    np.random.seed(RANDOM_SEED)
+
+    y, X, treatment, tau, b, e = synthetic_data(
+        mode=1, n=100000, p=NUM_FEATURES, sigma=1.0
+    )
+    INFERENCE_FEATURES = ["feature_" + str(i) for i in range(NUM_FEATURES)]
+    df = pd.DataFrame(X, columns=INFERENCE_FEATURES)
+    df[TREATMENT_COL] = treatment
+    df[OUTCOME_COL] = y
+    df[SCORE_COL] = e
+
+    for learner in (BaseXLearner(LinearRegression()), BaseRLearner(LinearRegression())):
+        sens = SensitivityMSM(
+            df=df,
+            inference_features=INFERENCE_FEATURES,
+            p_col=SCORE_COL,
+            treatment_col=TREATMENT_COL,
+            outcome_col=OUTCOME_COL,
+            learner=learner,
+        )
+        with pytest.raises(NotImplementedError):
+            sens.get_msm_bounds(gamma=[1.0, 2.0])

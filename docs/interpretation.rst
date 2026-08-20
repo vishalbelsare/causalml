@@ -2,7 +2,7 @@
 Interpretable Causal ML
 =======================
 
-Causal ML provides methods to interpret the treatment effect models trained, where we provide more sample code in `feature_interpretations_example.ipynb notebook <https://github.com/uber/causalml/blob/master/examples/feature_interpretations_example.ipynb>`_.
+Causal ML provides methods to interpret the treatment effect models trained, where we provide more sample code in `feature_interpretations_example.ipynb notebook <https://github.com/uber/causalml/blob/master/docs/examples/feature_interpretations_example.ipynb>`_.
 
 Meta-Learner Feature Importances
 --------------------------------
@@ -12,8 +12,8 @@ Meta-Learner Feature Importances
     from causalml.inference.meta import BaseSRegressor, BaseTRegressor, BaseXRegressor, BaseRRegressor
 
     slearner = BaseSRegressor(LGBMRegressor(), control_name='control')
-    slearner.estimate_ate(X, w_multi, y)
-    slearner_tau = slearner.fit_predict(X, w_multi, y)
+    slearner.estimate_ate(X=X, treatment=w_multi, y=y)
+    slearner_tau = slearner.fit_predict(X=X, treatment=w_multi, y=y)
 
     model_tau_feature = RandomForestRegressor()  # specify model for model_tau_feature
 
@@ -23,7 +23,7 @@ Meta-Learner Feature Importances
     # Using the feature_importances_ method in the base learner (LGBMRegressor() in this example)
     slearner.plot_importance(X=X, tau=slearner_tau, normalize=True, method='auto')
 
-    # Using eli5's PermutationImportance
+    # Using scikit-learn's permutation_importance
     slearner.plot_importance(X=X, tau=slearner_tau, normalize=True, method='permutation')
 
     # Using SHAP
@@ -75,7 +75,7 @@ Uplift Tree Visualization
 .. image:: ./_static/img/uplift_tree_vis.png
     :width: 629
 
-Please see below for how to read the plot, and `uplift_tree_visualization.ipynb example notebook <https://github.com/uber/causalml/blob/master/examples/uplift_tree_visualization.ipynb>`_ is provided in the repo.
+Please see below for how to read the plot, and `uplift_tree_visualization.ipynb example notebook <https://github.com/uber/causalml/blob/master/docs/examples/uplift_tree_visualization.ipynb>`_ is provided in the repo.
 
 - feature_name > threshold: For non-leaf node, the first line is an inequality indicating the splitting rule of this node to its children nodes.
 - impurity: the impurity is defined as the value of the split criterion function (such as KL, Chi, or ED) evaluated at this current node
@@ -86,7 +86,7 @@ Please see below for how to read the plot, and `uplift_tree_visualization.ipynb 
 - validation uplift score:  all the information above is static once the tree is trained (based on the trained trees), while the validation uplift score represents the treatment effect of the testing data when the method fill() is used. This score can be used as a comparison to the training uplift score, to evaluate if the tree has an overfitting issue.
 
 Uplift Tree Feature Importances
--------------------------
+-------------------------------
 
 .. code-block:: python
 

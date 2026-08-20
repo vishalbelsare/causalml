@@ -1,11 +1,11 @@
 import logging
+import numpy as np
 from sklearn.metrics import log_loss, roc_auc_score
 
 from .const import EPS
 from .regression import regression_metrics
 
-
-logger = logging.getLogger('causalml')
+logger = logging.getLogger("causalml")
 
 
 def logloss(y, p):
@@ -17,12 +17,13 @@ def logloss(y, p):
         bounded log loss error
     """
 
-    p[p < EPS] = EPS
-    p[p > 1 - EPS] = 1 - EPS
+    p = np.clip(p, EPS, 1 - EPS)
     return log_loss(y, p)
 
 
-def classification_metrics(y, p, w=None, metrics={'AUC': roc_auc_score, 'Log Loss': logloss}):
+def classification_metrics(
+    y, p, w=None, metrics={"AUC": roc_auc_score, "Log Loss": logloss}
+):
     """Log metrics for classifiers.
 
     Args:

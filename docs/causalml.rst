@@ -1,5 +1,6 @@
-causalml package
-================
+=============
+API Reference
+=============
 
 Submodules
 ----------
@@ -23,7 +24,7 @@ causalml.inference.meta module
     :show-inheritance:
 
 causalml.inference.iv module
-------------------------------
+----------------------------
 
 .. automodule:: causalml.inference.iv
     :members:
@@ -31,19 +32,28 @@ causalml.inference.iv module
     :undoc-members:
     :show-inheritance:
 
-causalml.inference.nn module
-------------------------------
+causalml.inference.torch module
+-------------------------------
 
-.. automodule:: causalml.inference.nn
+.. automodule:: causalml.inference.torch
     :members:
     :imported-members:
     :undoc-members:
     :show-inheritance:
 
 causalml.inference.tf module
-------------------------------
+----------------------------
 
 .. automodule:: causalml.inference.tf
+    :members:
+    :imported-members:
+    :undoc-members:
+    :show-inheritance:
+
+causalml.inference.jax module
+-----------------------------
+
+.. automodule:: causalml.inference.jax
     :members:
     :imported-members:
     :undoc-members:
@@ -91,9 +101,10 @@ causalml.metrics module
     :imported-members:
     :undoc-members:
     :show-inheritance:
+    :exclude-members: mae, r2_score, roc_auc_score
 
 causalml.feature_selection module
------------------------
+---------------------------------
 
 .. automodule:: causalml.feature_selection
     :members:
@@ -102,7 +113,7 @@ causalml.feature_selection module
     :show-inheritance:
 
 causalml.features module
---------------------------
+------------------------
 
 .. automodule:: causalml.features
     :members:

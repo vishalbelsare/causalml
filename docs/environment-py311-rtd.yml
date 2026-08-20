@@ -1,0 +1,39 @@
+name: causalml-rtd-py311
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - pip=24.0
+  - python=3.11
+  - pandoc
+  - sphinx>=8.2,<10
+  - pydata-sphinx-theme>=0.20.0
+  - sphinxcontrib-bibtex
+  - nbsphinx
+  # nbsphinx renders every notebook code cell as `ipython3`, and that Pygments
+  # lexer ships with IPython. Without it the lexer is unknown and each cell
+  # falls back to unhighlighted text -- 721 of them across the 27 notebooks.
+  # 8.10.0 is the floor that clears GHSA-29gw-9793-fvw7.
+  - ipython>=8.10.0
+  # Sphinx pulls Pygments in regardless; < 2.20.0 carries a ReDoS in AdlLexer
+  # (GHSA-5239-wwwm-4pmq), so the floor is stated rather than left to resolution.
+  - pygments>=2.20.0
+  - pip:
+    - cython>=3.0.11
+    - dill>=0.3.8
+    - importlib-metadata>=8.5.0
+    - joblib>=1.4.0
+    - lightgbm>=4.5.0
+    - matplotlib>=3.9.2
+    - multiprocess>=0.70.16
+    - numba>=0.60.0
+    - numpy>=1.25.2
+    - pandas>=2.2.2
+    - pyro-api>=0.1.2
+    - pyro-ppl>=1.9.1
+    - scikit-learn>=1.6.0
+    - scipy>=1.16.0
+    - seaborn>=0.13.2
+    - shap>=0.46.0
+    - statsmodels>=0.14.5
+    - xgboost>=2.1.3

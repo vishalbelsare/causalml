@@ -1,27 +1,36 @@
 from abc import ABCMeta, abstractmethod
+from copy import deepcopy
 import logging
 import numpy as np
-from pygam import LogisticGAM, s
 from sklearn.metrics import roc_auc_score as auc
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.model_selection import StratifiedKFold, train_test_split
-import xgboost as xgb
+from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
+from sklearn.isotonic import IsotonicRegression
 
+try:
+    import xgboost as xgb
+except ValueError as exc:
+    from causalml.exceptions import handle_xgboost_error
 
-logger = logging.getLogger('causalml')
+    handle_xgboost_error(exc)
+
+logger = logging.getLogger("causalml")
 
 
 class PropensityModel(metaclass=ABCMeta):
-    def __init__(self, clip_bounds=(1e-3, 1 - 1e-3), **model_kwargs):
+    def __init__(self, clip_bounds=(1e-3, 1 - 1e-3), calibrate=True, **model_kwargs):
         """
         Args:
             clip_bounds (tuple): lower and upper bounds for clipping propensity scores. Bounds should be implemented
                     such that: 0 < lower < upper < 1, to avoid division by zero in BaseRLearner.fit_predict() step.
+            calibrate (bool): whether calibrate the propensity score
             model_kwargs: Keyword arguments to be passed to the underlying classification model.
         """
         self.clip_bounds = clip_bounds
+        self.calibrate = calibrate
         self.model_kwargs = model_kwargs
         self.model = self._model
+        self.calibrator = None
 
     @property
     @abstractmethod
@@ -36,39 +45,55 @@ class PropensityModel(metaclass=ABCMeta):
         Fit a propensity model.
 
         Args:
-            X (numpy.ndarray): a feature matrix
-            y (numpy.ndarray): a binary target vector
+            X (numpy.ndarray, pd.DataFrame, or pl.DataFrame): a feature matrix.
+                scikit-learn >= 1.6 accepts pandas and Polars DataFrames
+                natively, so no conversion is performed here.
+            y (numpy.ndarray, pd.Series, or pl.Series): the binary treatment
+                indicator, not the outcome. A propensity score is P(W = 1 | X),
+                so this vector must be the treatment assignment.
         """
         self.model.fit(X, y)
+        if self.calibrate:
+            # Fit a calibrator to the propensity scores with IsotonicRegression.
+            # Ref: https://scikit-learn.org/stable/modules/isotonic.html
+            self.calibrator = IsotonicRegression(
+                out_of_bounds="clip",
+                y_min=self.clip_bounds[0],
+                y_max=self.clip_bounds[1],
+            )
+            self.calibrator.fit(self.model.predict_proba(X)[:, 1], y)
 
     def predict(self, X):
         """
         Predict propensity scores.
 
         Args:
-            X (numpy.ndarray): a feature matrix
+            X (numpy.ndarray, pd.DataFrame, or pl.DataFrame): a feature matrix
 
         Returns:
             (numpy.ndarray): Propensity scores between 0 and 1.
         """
-        return np.clip(
-            self.model.predict_proba(X)[:, 1], *self.clip_bounds
-        )
+        p = self.model.predict_proba(X)[:, 1]
+        if self.calibrate:
+            p = self.calibrator.transform(p)
+
+        return np.clip(p, *self.clip_bounds)
 
     def fit_predict(self, X, y):
         """
         Fit a propensity model and predict propensity scores.
 
         Args:
-            X (numpy.ndarray): a feature matrix
-            y (numpy.ndarray): a binary target vector
+            X (numpy.ndarray, pd.DataFrame, or pl.DataFrame): a feature matrix
+            y (numpy.ndarray, pd.Series, or pl.Series): the binary treatment
+                indicator, not the outcome. A propensity score is P(W = 1 | X),
+                so this vector must be the treatment assignment.
 
         Returns:
             (numpy.ndarray): Propensity scores between 0 and 1.
         """
         self.fit(X, y)
         propensity_scores = self.predict(X)
-        logger.info('AUC score: {:.6f}'.format(auc(y, propensity_scores)))
         return propensity_scores
 
 
@@ -80,16 +105,21 @@ class LogisticRegressionPropensityModel(PropensityModel):
     @property
     def _model(self):
         kwargs = {
-            'penalty': 'elasticnet',
-            'solver': 'saga',
-            'Cs': np.logspace(1e-3, 1 - 1e-3, 4),
-            'l1_ratios': np.linspace(1e-3, 1 - 1e-3, 4),
-            'cv': StratifiedKFold(
-                n_splits=self.model_kwargs.pop('n_fold') if 'n_fold' in self.model_kwargs else 4,
+            "penalty": "elasticnet",
+            "solver": "saga",
+            "Cs": 4,
+            "scoring": "neg_log_loss",
+            "l1_ratios": np.linspace(1e-3, 1 - 1e-3, 4),
+            "cv": StratifiedKFold(
+                n_splits=(
+                    self.model_kwargs.pop("n_fold")
+                    if "n_fold" in self.model_kwargs
+                    else 4
+                ),
                 shuffle=True,
-                random_state=self.model_kwargs.get('random_state', 42)
+                random_state=self.model_kwargs.get("random_state", 42),
             ),
-            'random_state': 42,
+            "random_state": 42,
         }
         kwargs.update(self.model_kwargs)
 
@@ -114,35 +144,40 @@ class GradientBoostedPropensityModel(PropensityModel):
         self,
         early_stop=False,
         clip_bounds=(1e-3, 1 - 1e-3),
-        **model_kwargs
+        calibrate=True,
+        **model_kwargs,
     ):
-        super(GradientBoostedPropensityModel, self).__init__(clip_bounds, **model_kwargs)
         self.early_stop = early_stop
+        super().__init__(clip_bounds, calibrate, **model_kwargs)
 
     @property
     def _model(self):
         kwargs = {
-            'max_depth': 8,
-            'learning_rate': 0.1,
-            'n_estimators': 100,
-            'objective': 'binary:logistic',
-            'nthread': -1,
-            'colsample_bytree': 0.8,
-            'random_state': 42,
+            "max_depth": 3,
+            "learning_rate": 0.1,
+            "n_estimators": 100,
+            "objective": "binary:logistic",
+            "nthread": -1,
+            "colsample_bytree": 0.8,
+            "random_state": 42,
         }
         kwargs.update(self.model_kwargs)
 
+        if self.early_stop:
+            kwargs.update({"early_stopping_rounds": 10})
+
         return xgb.XGBClassifier(**kwargs)
 
-    def fit(self, X, y, early_stopping_rounds=10, stop_val_size=0.2):
+    def fit(self, X, y, stop_val_size=0.2):
         """
         Fit a propensity model.
 
         Args:
-            X (numpy.ndarray): a feature matrix
-            y (numpy.ndarray): a binary target vector
+            X (numpy.ndarray, pd.DataFrame, or pl.DataFrame): a feature matrix
+            y (numpy.ndarray, pd.Series, or pl.Series): the binary treatment
+                indicator, not the outcome. A propensity score is P(W = 1 | X),
+                so this vector must be the treatment assignment.
         """
-
         if self.early_stop:
             X_train, X_val, y_train, y_val = train_test_split(
                 X, y, test_size=stop_val_size
@@ -152,87 +187,167 @@ class GradientBoostedPropensityModel(PropensityModel):
                 X_train,
                 y_train,
                 eval_set=[(X_val, y_val)],
-                early_stopping_rounds=early_stopping_rounds
             )
+            if self.calibrate:
+                self.calibrator = IsotonicRegression(
+                    out_of_bounds="clip",
+                    y_min=self.clip_bounds[0],
+                    y_max=self.clip_bounds[1],
+                )
+                self.calibrator.fit(self.model.predict_proba(X)[:, 1], y)
         else:
-            super(GradientBoostedPropensityModel, self).fit(X, y)
-
-    def predict(self, X):
-        """
-        Predict propensity scores.
-
-        Args:
-            X (numpy.ndarray): a feature matrix
-
-        Returns:
-            (numpy.ndarray): Propensity scores between 0 and 1.
-        """
-        if self.early_stop:
-            return np.clip(
-                self.model.predict_proba(
-                    X,
-                    ntree_limit=self.model.best_ntree_limit
-                )[:, 1],
-                *self.clip_bounds
-            )
-        else:
-            return super(GradientBoostedPropensityModel, self).predict(X)
+            super().fit(X, y)
 
 
-def calibrate(ps, treatment):
-    """Calibrate propensity scores with logistic GAM.
-
-    Ref: https://pygam.readthedocs.io/en/latest/api/logisticgam.html
+def compute_propensity_score(
+    X,
+    treatment,
+    p_model=None,
+    X_pred=None,
+    treatment_pred=None,
+    calibrate_p=True,
+    clip_bounds=(1e-3, 1 - 1e-3),
+):
+    """Generate propensity score if user didn't provide and optionally calibrate.
 
     Args:
-        ps (numpy.array): a propensity score vector
-        treatment (numpy.array): a binary treatment vector (0: control, 1: treated)
-
-    Returns:
-        (numpy.array): a calibrated propensity score vector
-    """
-
-    gam = LogisticGAM(s(0)).fit(ps, treatment)
-
-    return gam.predict_proba(ps)
-
-
-def compute_propensity_score(X, treatment, p_model=None, X_pred=None, treatment_pred=None, calibrate_p=True):
-    """Generate propensity score if user didn't provide
-
-    Args:
-        X (np.matrix): features for training
-        treatment (np.array or pd.Series): a treatment vector for training
-        p_model (propensity model object, optional):
-            ElasticNetPropensityModel (default) / GradientBoostedPropensityModel
-        X_pred (np.matrix, optional): features for prediction
-        treatment_pred (np.array or pd.Series, optional): a treatment vector for prediciton
+        X (np.matrix, pd.DataFrame, or pl.DataFrame): features for training
+        treatment (np.array, pd.Series, or pl.Series): a treatment vector for training
+        p_model (model object, optional): a binary classifier with either a predict_proba or predict method
+        X_pred (np.matrix, pd.DataFrame, or pl.DataFrame, optional): features for prediction
+        treatment_pred (np.array, pd.Series, or pl.Series, optional): a treatment vector for prediction
         calibrate_p (bool, optional): whether calibrate the propensity score
+        clip_bounds (tuple, optional): lower and upper bounds for clipping propensity scores. Bounds should be implemented
+                    such that: 0 < lower < upper < 1, to avoid division by zero in BaseRLearner.fit_predict() step.
 
     Returns:
         (tuple)
             - p (numpy.ndarray): propensity score
-            - p_model (PropensityModel): a trained PropensityModel object
+            - p_model (PropensityModel): either the original p_model or a trained ElasticNetPropensityModel
     """
     if treatment_pred is None:
-        treatment_pred = treatment.copy()
+        treatment_pred = treatment.copy() if hasattr(treatment, "copy") else treatment
+
     if p_model is None:
-        p_model = ElasticNetPropensityModel()
+        p_model = ElasticNetPropensityModel(
+            clip_bounds=clip_bounds, calibrate=calibrate_p
+        )
 
     p_model.fit(X, treatment)
 
-    if X_pred is None:
-        p = p_model.predict(X)
-    else:
+    X_pred = X if X_pred is None else X_pred
+
+    try:
+        p = p_model.predict_proba(X_pred)[:, 1]
+    except AttributeError:
+        logger.info("predict_proba not available, using predict instead")
         p = p_model.predict(X_pred)
 
-    if calibrate_p:
-        logger.info('Calibrating propensity scores.')
-        p = calibrate(p, treatment_pred)
-
-    # force the p values within the range
-    eps = np.finfo(float).eps
-    p = np.where(p < 0 + eps, 0 + eps*1.001, p)
-    p = np.where(p > 1 - eps, 1 - eps*1.001, p)
-
     return p, p_model
+
+
+def compute_r_residuals(
+    X,
+    treatment,
+    y,
+    outcome_learner,
+    propensity_learner=None,
+    p=None,
+    method="predict",
+    n_folds=5,
+    random_state=None,
+    n_jobs=-1,
+    compute_w_residual=True,
+):
+    """Cross-fitted outcome/treatment residuals for the R-loss (Nie & Wager, 2021).
+
+    Computes out-of-fold m_hat(X) = E[Y|X] and e_hat(X) = E[W|X] via
+    n_folds-fold cross-fitting, stratified on treatment so every fold retains
+    both arms, and returns:
+
+        y_residual = y - m_hat(X)
+        w_residual = w - e_hat(X)
+
+    A candidate CATE model tau_hat is scored against these via the R-loss:
+
+        R-loss(tau_hat) = mean[(y_residual - w_residual * tau_hat(X)) ** 2]
+
+    This is also the quantity BaseRLearner.fit() implicitly minimizes: fitting
+    the per-arm effect model against target (y_residual / w_residual) with
+    sample_weight = w_residual ** 2 is the weighted-least-squares solution to
+    the same R-loss objective.
+
+    Args:
+        X (numpy.ndarray or pandas.DataFrame): a feature matrix
+        treatment (numpy.ndarray or pandas.Series): a binary treatment indicator (0 or 1)
+        y (numpy.ndarray or pandas.Series): an outcome vector
+        outcome_learner (model): a model to estimate E[Y|X]. Must implement
+            fit/predict (or predict_proba if method="predict_proba")
+        propensity_learner (PropensityModel, optional): passed through to
+            compute_propensity_score(). Ignored if `p` is given.
+            Defaults to ElasticNetPropensityModel
+        p (numpy.ndarray or pandas.Series, optional): pre-computed propensity
+            scores. If given, propensity is not re-estimated in-fold
+        method (str, optional): "predict" or "predict_proba" (for classifier
+            outcome learners, e.g. BaseRClassifier). Only the positive-class
+            column is used for "predict_proba". Default "predict"
+        n_folds (int, optional): number of cross-fitting folds. Default 5
+        random_state (int or None, optional): random seed for the fold splitter
+        n_jobs (int, optional): parallel jobs forwarded to cross_val_predict
+            for the outcome model. Default -1
+        compute_w_residual (bool, optional): whether to compute and return
+            w_residual. If False, skips propensity estimation entirely (no
+            in-fold propensity model is fit) and returns w_residual=None.
+            Set False when only the outcome residual is needed -- e.g.
+            BaseRLearner.fit(), which already has propensity scores from
+            elsewhere and would otherwise pay for a redundant per-fold
+            propensity fit whose output is discarded. Default True.
+
+    Returns:
+        (tuple):
+            - y_residual (numpy.ndarray): y - m_hat(X), out-of-fold
+            - w_residual (numpy.ndarray or None): w - e_hat(X), out-of-fold
+              (or w - p directly if `p` was supplied), or None if
+              compute_w_residual=False
+    """
+    X = np.asarray(X)
+    treatment = np.asarray(treatment)
+    y = np.asarray(y, dtype=float)
+
+    splits = list(
+        StratifiedKFold(
+            n_splits=n_folds, shuffle=True, random_state=random_state
+        ).split(X, treatment)
+    )
+
+    if method == "predict_proba":
+        yhat = cross_val_predict(
+            outcome_learner, X, y, cv=splits, method="predict_proba", n_jobs=n_jobs
+        )[:, 1]
+    else:
+        yhat = cross_val_predict(outcome_learner, X, y, cv=splits, n_jobs=n_jobs)
+
+    y_residual = y - yhat
+
+    if not compute_w_residual:
+        return y_residual, None
+
+    if p is not None:
+        w_residual = treatment - np.asarray(p, dtype=float)
+    else:
+        w_residual = np.empty(len(treatment), dtype=float)
+        for train_idx, test_idx in splits:
+            p_test, _ = compute_propensity_score(
+                X=X[train_idx],
+                treatment=treatment[train_idx],
+                p_model=(
+                    deepcopy(propensity_learner)
+                    if propensity_learner is not None
+                    else None
+                ),
+                X_pred=X[test_idx],
+                treatment_pred=treatment[test_idx],
+            )
+            w_residual[test_idx] = treatment[test_idx] - p_test
+
+    return y_residual, w_residual

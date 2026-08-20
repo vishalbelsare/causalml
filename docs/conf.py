@@ -12,16 +12,16 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
-import os
 import matplotlib
-matplotlib.use('agg')
+import importlib.metadata
+
+matplotlib.use("agg")
 
 # If extensions (or modules to document with autodoc) are in another
 # directory, add these directories to sys.path here. If the directory is
 # relative to the documentation root, use os.path.abspath to make it
 # absolute, like shown here.
-#sys.path.insert(0, os.path.abspath('.'))
+# sys.path.insert(0, os.path.abspath('.'))
 
 # Get the project root dir, which is the parent dir of this
 # cwd = os.getcwd()
@@ -32,93 +32,156 @@ matplotlib.use('agg')
 # version is used.
 # sys.path.insert(0, project_root)
 
-import causalml
-import sphinx_rtd_theme
-
 # -- General configuration ---------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
-#needs_sphinx = '1.0'
+# needs_sphinx = '1.0'
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.doctest',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.autosectionlabel',
-    'sphinxcontrib.bibtex'
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.doctest",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.autosectionlabel",
+    "sphinx.ext.intersphinx",
+    "sphinxcontrib.bibtex",
+    "nbsphinx",
 ]
 
-autodoc_mock_imports = ["_tkinter"]
+# The neural backends are optional extras (`tf`, `torch`, `jax`) and none of them
+# is installed in the docs environment -- `docs/environment-py311-rtd.yml` pulls
+# none of tensorflow, torch or jax. Without mocks, `automodule` cannot import
+# `causalml.inference.tf` or `causalml.inference.torch` at all, so their API has
+# never appeared on the published site. Mocking lets autodoc read the signatures
+# and docstrings without adding heavy dependencies to the docs build.
+autodoc_mock_imports = [
+    "_tkinter",
+    "flax",
+    "jax",
+    "jaxlib",
+    "keras",
+    "optax",
+    "pyro",
+    "tensorflow",
+    "torch",
+]
+
+# Section labels are prefixed with the document name.  Without this, every
+# repeated section title across the notebooks and the changelog ("Updates",
+# "CATE", "ATE w/ confidence intervals", ...) collides into one ambiguous label.
+autosectionlabel_prefix_document = True
+
+# Only label sections down to the third level.  The deepest headings that are
+# actually cross-referenced are third level (the individual learners in
+# methodology.rst); below that the notebooks repeat the same few subsection
+# titles many times over, which produces ambiguous labels and nothing else.
+autosectionlabel_maxdepth = 3
+
+# Documents that legitimately repeat a section title *within themselves*, which a
+# document prefix cannot separate: the changelog gives every release its own
+# "Updates" / "Bug Fixes" / "New Contributors" headings, and these notebooks walk
+# the same steps ("CATE", "ATE w/ confidence intervals", ...) once per learner.
+# Renaming those headings would mean rewriting release history and reflowing the
+# notebooks, so the duplicate-label warning is accepted here and nowhere else --
+# on the narrative pages it still fires, and a new notebook has to be added to
+# this list deliberately rather than inheriting the exemption.
+suppress_warnings = [
+    "autosectionlabel.changelog",
+    "autosectionlabel.examples/causal_trees_with_synthetic_data",
+    "autosectionlabel.examples/causal_trees_with_synthetic_data_multiple_treatment_groups",
+    "autosectionlabel.examples/feature_interpretations_example",
+    "autosectionlabel.examples/iv_nlsym_synthetic_data",
+    "autosectionlabel.examples/meta_learners_with_synthetic_data_multiple_treatment",
+    "autosectionlabel.examples/sensitivity_example_with_synthetic_data",
+    # `formats: all` in .readthedocs.yml also builds an epub, and its builder
+    # warns for every static asset whose extension it has no mimetype for --
+    # the two favicons and 27 notebook images. Nothing is broken: the files are
+    # simply left out of the epub manifest, and the HTML build does not care.
+    "epub.unknown_project_files",
+]
+
+# `causalml` estimators inherit scikit-learn docstrings, which cross-reference
+# labels that only exist in scikit-learn's own documentation (`metadata_routing`,
+# `r2_score`, `roc_auc_score`, ...).  Without these inventories those references
+# resolve to nothing; with them they resolve to the upstream page.
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+}
+
+# Keep a network hiccup from stalling the build; a missing inventory degrades to
+# an unresolved reference rather than a hang.
+intersphinx_timeout = 30
 
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = ".rst"
 
 # The encoding of source files.
-#source_encoding = 'utf-8-sig'
+# source_encoding = 'utf-8-sig'
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = "index"
 
 # General information about the project.
-project = u'causalml'
-copyright = u'2019 Uber Technologies, Inc.'
-author = 'CausalML'
+project = "causalml"
+copyright = "2019-2026 Uber Technologies, Inc."
+author = "CausalML"
 
 # The version info for the project you're documenting, acts as replacement
 # for |version| and |release|, also used in various other places throughout
 # the built documents.
 #
 # The short X.Y version.
-version = causalml.__version__
+
+version = importlib.metadata.version("causalml")
 # The full version, including alpha/beta/rc tags.
 # release = causalml.__version__
 
 # The language for content autogenerated by Sphinx. Refer to documentation
 # for a list of supported languages.
-#language = None
+# language = None
 
 # There are two options for replacing |today|: either, you set today to
 # some non-false value, then it is used:
-#today = ''
+# today = ''
 # Else, today_fmt is used as the format for a strftime call.
-#today_fmt = '%B %d, %Y'
+# today_fmt = '%B %d, %Y'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = [
-    '_build',
-    '*processor*',
-    'causalml.batch'
-]
+exclude_patterns = ["_build", "*processor*", "causalml.batch"]
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
-#default_role = None
+# default_role = None
 
 # If true, '()' will be appended to :func: etc. cross-reference text.
-#add_function_parentheses = True
+# add_function_parentheses = True
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-#add_module_names = True
+# add_module_names = True
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.
-#show_authors = False
+# show_authors = False
 
-# The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+# The Pygments style is left to the theme, which ships an accessible pair of
+# light and dark syntax highlighting styles and switches between them with the
+# color-mode toggle. Pinning a single style here breaks the dark one.
 
 # A list of ignored prefixes for module index sorting.
-#modindex_common_prefix = []
+# modindex_common_prefix = []
 
 # If true, keep warnings as "system message" paragraphs in the built
 # documents.
@@ -129,144 +192,158 @@ pygments_style = 'sphinx'
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'sphinx_rtd_theme'
+html_theme = "pydata_sphinx_theme"
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 html_theme_options = {
-        'logo_only': False,
-        'display_version': True
+    # The wordmark is near-black, which is illegible on the dark navbar, so the
+    # dark variant recolours it (the cube keeps its colours).  The theme
+    # resolves these against the root of the static output, so they are
+    # basenames and the logo directory is added to html_static_path below.
+    "logo": {
+        "image_light": "causalml_logo_transparent.png",
+        "image_dark": "causalml_logo_dark_transparent.png",
+        "alt_text": "CausalML",
+    },
+    "github_url": "https://github.com/uber/causalml",
+    "navigation_depth": 2,
+    "navbar_align": "left",
 }
 
 # Add any paths that contain custom themes here, relative to this directory.
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+# html_theme_path = []
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-#html_title = None
+# html_title = None
 
 # A shorter title for the navigation bar.  Default is the same as
 # html_title.
-#html_short_title = None
+# html_short_title = None
 
-# The name of an image file (relative to this directory) to place at the
-# top of the sidebar.
-html_logo = '_static/img/logo/causalml_logo_square_transparent.png'
+# The name of an image file (relative to this directory) to place in the header
+# navbar.  This is the wide (760x280) logo rather than the square one, which the
+# horizontal navbar scales down to an unreadable size.
+html_logo = "_static/img/logo/causalml_logo_transparent.png"
 
 # The name of an image file (within the static path) to use as favicon
 # of the docs.  This file should be a Windows icon file (.ico) being
 # 16x16 or 32x32 pixels large.
-html_favicon = '_static/img/logo/favicon.ico'
+html_favicon = "_static/img/logo/favicon.ico"
 
 # Add any paths that contain custom static files (such as style sheets)
 # here, relative to this directory. They are copied after the builtin
 # static files, so a file named "default.css" will overwrite the builtin
 # "default.css".
-html_static_path = ['_static']
+# The logo directory is listed a second time so the theme's light/dark logos,
+# which it looks for at the root of the static output, resolve there too.
+html_static_path = ["_static", "_static/img/logo"]
+
+# Collapses the contents list index.rst writes into the landing page down to its
+# top level, with a toggle per entry for the level below it.
+html_css_files = ["css/collapsible-toctree.css"]
+html_js_files = ["js/collapsible-toctree.js"]
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page
 # bottom, using the given strftime format.
-#html_last_updated_fmt = '%b %d, %Y'
+# html_last_updated_fmt = '%b %d, %Y'
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
-#html_use_smartypants = True
+# html_use_smartypants = True
 
 # Custom sidebar templates, maps document names to template names.
-#html_sidebars = {}
+# html_sidebars = {}
 
 # Additional templates that should be rendered to pages, maps page names
 # to template names.
-#html_additional_pages = {}
+# html_additional_pages = {}
 
 # If false, no module index is generated.
-#html_domain_indices = True
+# html_domain_indices = True
 
 # If false, no index is generated.
-#html_use_index = True
+# html_use_index = True
 
 # If true, the index is split into individual pages for each letter.
-#html_split_index = False
+# html_split_index = False
 
 # If true, links to the reST sources are added to the pages.
-#html_show_sourcelink = True
+# html_show_sourcelink = True
 
 # If true, "Created using Sphinx" is shown in the HTML footer.
 # Default is True.
-#html_show_sphinx = True
+# html_show_sphinx = True
 
 # If true, "(C) Copyright ..." is shown in the HTML footer.
 # Default is True.
-#html_show_copyright = True
+# html_show_copyright = True
 
 # If true, an OpenSearch description file will be output, and all pages
 # will contain a <link> tag referring to it.  The value of this option
 # must be the base URL from which the finished HTML is served.
-#html_use_opensearch = ''
+# html_use_opensearch = ''
 
 # This is the file name suffix for HTML files (e.g. ".xhtml").
-#html_file_suffix = None
+# html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'causalml_doc'
+htmlhelp_basename = "causalml_doc"
 
 
 # -- Options for LaTeX output ------------------------------------------
 
+# To resolve a Unicode error as suggested in
+# https://docs.readthedocs.io/en/stable/guides/pdf-non-ascii-languages.html
+latex_engine = "xelatex"
+
 latex_elements = {
     # The paper size ('letterpaper' or 'a4paper').
-    #'papersize': 'letterpaper',
-
+    # 'papersize': 'letterpaper',
     # The font size ('10pt', '11pt' or '12pt').
-    #'pointsize': '10pt',
-
+    # 'pointsize': '10pt',
     # Additional stuff for the LaTeX preamble.
-    #'preamble': '',
+    # 'preamble': '',
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass
 # [howto/manual]).
 latex_documents = [
-    ('index', 'causalml.tex',
-     u'causalml Documentation',
-     u'Someone at Uber', 'manual'),
+    ("index", "causalml.tex", "causalml Documentation", "CausalML Team", "manual")
 ]
 
 # The name of an image file (relative to this directory) to place at
 # the top of the title page.
-#latex_logo = None
+# latex_logo = None
 
 # For "manual" documents, if this is true, then toplevel headings
 # are parts, not chapters.
-#latex_use_parts = False
+# latex_use_parts = False
 
 # If true, show page references after internal links.
-#latex_show_pagerefs = False
+# latex_show_pagerefs = False
 
 # If true, show URL addresses after external links.
-#latex_show_urls = False
+# latex_show_urls = False
 
 # Documents to append as an appendix to all manuals.
-#latex_appendices = []
+# latex_appendices = []
 
 # If false, no module index is generated.
-#latex_domain_indices = True
+# latex_domain_indices = True
 
 
 # -- Options for manual page output ------------------------------------
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [
-    ('index', 'causalml',
-     u'causalml Documentation',
-     [author], 1)
-]
+man_pages = [("index", "causalml", "causalml Documentation", [author], 1)]
 
 # If true, show URL addresses after external links.
-#man_show_urls = False
+# man_show_urls = False
 
 
 # -- Options for Texinfo output ----------------------------------------
@@ -275,25 +352,31 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    ('index', 'causalml',
-     u'causalml Documentation',
-     author,
-     'causalml',
-     'One line description of project.',
-     'Miscellaneous'),
+    (
+        "index",
+        "causalml",
+        "causalml Documentation",
+        author,
+        "causalml",
+        "Python Package for Uplift Modeling and Causal Inference with Machine Learning Algorithms",
+        "Miscellaneous",
+    )
 ]
 
 # Documents to append as an appendix to all manuals.
-#texinfo_appendices = []
+# texinfo_appendices = []
 
 # If false, no module index is generated.
-#texinfo_domain_indices = True
+# texinfo_domain_indices = True
 
 # How to display URL addresses: 'footnote', 'no', or 'inline'.
-#texinfo_show_urls = 'footnote'
+# texinfo_show_urls = 'footnote'
 
 # If true, do not generate a @detailmenu in the "Top" node's menu.
-#texinfo_no_detailmenu = False
+# texinfo_no_detailmenu = False
 
 numpydoc_show_class_members = True
 class_members_toctree = False
+
+# In conf.py
+bibtex_bibfiles = ["refs.bib"]  # Add path(s) to your .bib file(s)

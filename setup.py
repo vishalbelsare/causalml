@@ -1,70 +1,78 @@
+import multiprocessing as mp
+import os
 from setuptools import dist, setup, find_packages
 from setuptools.extension import Extension
+
 try:
     from Cython.Build import cythonize
 except ImportError:
-    dist.Distribution().fetch_build_eggs(['cython>=0.28.0'])
+    dist.Distribution().fetch_build_eggs(["cython"])
     from Cython.Build import cythonize
 import Cython.Compiler.Options
+
 Cython.Compiler.Options.annotate = True
+
 try:
-    from numpy import get_include as np_get_include
+    import numpy as np
 except ImportError:
-    dist.Distribution().fetch_build_eggs(['numpy'])
-    from numpy import get_include as np_get_include
+    dist.Distribution().fetch_build_eggs(["numpy"])
+    import numpy as np
 
-import causalml
+# fmt: off
+cython_modules = [
+    ("causalml.inference.tree._tree._tree", "causalml/inference/tree/_tree/_tree.pyx"),
+    ("causalml.inference.tree._tree._criterion", "causalml/inference/tree/_tree/_criterion.pyx"),
+    ("causalml.inference.tree._tree._splitter", "causalml/inference/tree/_tree/_splitter.pyx"),
+    ("causalml.inference.tree._tree._utils", "causalml/inference/tree/_tree/_utils.pyx"),
+    ("causalml.inference.tree._tree._group_criterion", "causalml/inference/tree/_tree/_group_criterion.pyx"),
+    ("causalml.inference.tree._tree._group_builder", "causalml/inference/tree/_tree/_group_builder.pyx"),
+    ("causalml.inference.tree.causal._criterion", "causalml/inference/tree/causal/_criterion.pyx"),
+    ("causalml.inference.tree.causal._builder", "causalml/inference/tree/causal/_builder.pyx"),
+    ("causalml.inference.tree._uplift._criterion", "causalml/inference/tree/_uplift/_criterion.pyx"),
+    ("causalml.inference.tree._uplift._builder", "causalml/inference/tree/_uplift/_builder.pyx"),
+]
+# fmt: on
 
-
-with open("README.md", "r", encoding="utf-8") as f:
-    long_description = f.read()
-
-
-with open("requirements.txt") as f:
-    requirements = f.readlines()
+# Cython line tracing is opt-in via the CYTHON_TRACE env var so that coverage
+# builds keep instrumentation while release wheels stay uninstrumented (and fast).
+# Hardcoding `# cython: linetrace=True` in the .pyx files would otherwise leak the
+# tracing hooks into published wheels, crippling nogil tree-building performance.
+linetrace = os.environ.get("CYTHON_TRACE", "0") not in ("0", "", "false", "False")
+define_macros = (
+    [("CYTHON_TRACE", "1"), ("CYTHON_TRACE_NOGIL", "1")] if linetrace else []
+)
 
 extensions = [
-    Extension("causalml.inference.tree.causaltree",
-              ["causalml/inference/tree/causaltree.pyx"],
-              libraries=[],
-              include_dirs=[np_get_include()],
-              extra_compile_args=["-O3"]),
-    Extension("causalml.inference.tree.uplift",
-              ["causalml/inference/tree/uplift.pyx"],
-              libraries=[],
-              include_dirs=[np_get_include()],
-              extra_compile_args=["-O3"])
+    Extension(
+        name,
+        [source],
+        libraries=[],
+        include_dirs=[np.get_include()],
+        extra_compile_args=["-O3"],
+        define_macros=define_macros,
+    )
+    for name, source in cython_modules
 ]
 
-packages = find_packages()
+packages = find_packages(exclude=["tests", "tests.*"])
+
+nthreads = mp.cpu_count()
+if os.name == "nt":
+    nthreads = 0
+else:
+    mp.set_start_method("fork", force=True)
 
 setup(
-    name="causalml",
-    version=causalml.__version__,
-    author="Huigang Chen, Totte Harinen, Jeong-Yoon Lee, Yuchen Luo, Jing Pan, Mike Yung, Zhenyu Zhao",
-    author_email="",
-    description="Python Package for Uplift Modeling and Causal Inference with Machine Learning Algorithms",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="https://github.com/uber/causalml",
     packages=packages,
-    python_requires=">=3.6",
-    classifiers=[
-        "Programming Language :: Python",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: OS Independent",
-    ],
+    ext_modules=cythonize(
+        extensions,
+        annotate=True,
+        nthreads=nthreads,
+        compiler_directives={"linetrace": linetrace},
+    ),
+    include_dirs=[np.get_include()],
     setup_requires=[
-        # Setuptools 18.0 properly handles Cython extensions.
-        'setuptools>=18.0',
-        'cython',
-        'numpy',
-        'scikit-learn>=0.22.0'
+        "cython",
+        "numpy",
     ],
-    install_requires=requirements,
-    ext_modules=cythonize(extensions, annotate=True),
-    include_dirs=[np_get_include()],
-    extras_require={
-        'tf': ['tensorflow>=2.4.0']
-    }
 )

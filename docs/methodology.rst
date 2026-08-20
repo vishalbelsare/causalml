@@ -2,14 +2,58 @@
 Methodology
 ===========
 
+In this section we dive more deeply into the algorithms implemented in CausalML.  To provide a basis for the discussion, we review some of the frameworks and definitions used in the literature.
+
+We use the Neyman-Rubin potential outcomes framework and assume Y represents the outcome, W represents the treatment assignment, and X_i the observed covariates.
+
+If you are deciding which of these methods to use on a given problem, start
+with :doc:`choosing_an_estimator`; this page documents how each method works.
+
+
+Supported Algorithms
+--------------------
+CausalML currently supports the following methods:
+
+- Tree-based algorithms
+    - :ref:`Uplift Random Forests <methodology:Uplift Tree>` on KL divergence, Euclidean Distance, and Chi-Square
+    - :ref:`Uplift Random Forests <methodology:CTS>` on Contextual Treatment Selection
+    - :ref:`Uplift Random Forests <methodology:DDP>` on delta-delta-p (:math:`\Delta\Delta P`) criterion (only for binary trees and two-class problems)
+    - :ref:`Uplift Random Forests <methodology:IDDP>` on IDDP (only for binary trees and two-class problems)
+    - :ref:`Interaction Tree <methodology:IT>` (only for binary trees and two-class problems)
+    - :ref:`Causal Inference Tree <methodology:CIT>` (only for binary trees and two-class problems)
+- Meta-learner algorithms
+    - :ref:`S-Learner <methodology:S-Learner>`
+    - :ref:`T-Learner <methodology:T-Learner>`
+    - :ref:`X-Learner <methodology:X-Learner>`
+    - :ref:`R-Learner <methodology:R-Learner>`
+    - :ref:`Doubly Robust (DR) learner <methodology:Doubly Robust (DR) learner>`
+- Instrumental variables algorithms
+    - :ref:`2-Stage Least Squares (2SLS) <methodology:2-Stage Least Squares (2SLS)>`
+    - :ref:`Doubly Robust Instrumental Variable (DRIV) learner <methodology:Doubly Robust Instrumental Variable (DRIV) learner>`
+- Neural network based algorithms
+    - :ref:`CEVAE <methodology:CEVAE>`
+    - :ref:`DragonNet <methodology:DragonNet>`
+- Treatment optimization algorithms
+    - :ref:`Counterfactual Unit Selection <methodology:Counterfactual Unit Selection>`
+    - :ref:`Counterfactual Value Estimator <methodology:Counterfactual Value Estimator>`
+
+
 Meta-Learner Algorithms
 -----------------------
+
+*Relevant classes:* ``BaseSRegressor``/``BaseSClassifier``,
+``BaseTRegressor``/``BaseTClassifier``, ``BaseXRegressor``/``BaseXClassifier``,
+``BaseRRegressor``/``BaseRClassifier`` and
+``BaseDRRegressor``/``BaseDRClassifier`` in ``causalml.inference.meta``, each
+taking any scikit-learn-compatible model as its base learner. Preconfigured
+variants (``XGBTRegressor``, ``LRSRegressor``, ...) are listed in the
+:doc:`API Reference <causalml>`.
 
 A meta-algorithm (or meta-learner) is a framework to estimate the Conditional Average Treatment Effect (CATE) using any machine learning estimators (called base learners) :cite:`kunzel2019metalearners`.
 
 A meta-algorithm uses either a single base learner while having the treatment indicator as a feature (e.g. S-learner), or multiple base learners separately for each of the treatment and control groups (e.g. T-learner, X-learner and R-learner).
 
-Confidence intervals of average treatment effect estimates are calculated based on the lower bound formular (7) from :cite:`imbens2009recent`.
+Confidence intervals of average treatment effect estimates are calculated based on the lower bound formula (7) from :cite:`imbens2009recent`.
 
 S-Learner
 ~~~~~~~~~
@@ -18,10 +62,10 @@ S-learner estimates the treatment effect using a single machine learning model a
 
 **Stage 1**
 
-Estimate the average outcomes :math:`\mu(x)` with covariates :math:`X` and an indicator variable for treatment effect :math:`W`:
+Estimate the average outcomes :math:`\mu(x)` with covariates :math:`X` and an indicator variable for treatment :math:`W`:
 
 .. math::
-  \mu(x) = E[Y \mid X=x, W=w]
+  \mu(x,w) = E[Y \mid X=x, W=w]
 
 using a machine learning model.
 
@@ -113,7 +157,7 @@ where :math:`\hat{e}^{(-i)}(X_i)`, etc. denote the out-of-fold held-out predicti
 Doubly Robust (DR) learner
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-DR-learner :cite:`kennedy2020optimal` estiamtes the CATE via cross-fitting a doubly-robust score function in two stages as follows. We start by randomly split the data :math:`\{Y, X, W\}` into 3 partitions :math:`\{Y^i, X^i, W^i\}, i=\{1,2,3\}`.
+DR-learner :cite:`kennedy2020optimal` estimates the CATE via cross-fitting a doubly-robust score function in two stages as follows. We start by randomly split the data :math:`\{Y, X, W\}` into 3 partitions :math:`\{Y^i, X^i, W^i\}, i=\{1,2,3\}`.
 
 **Stage 1**
 
@@ -130,7 +174,7 @@ with :math:`\{Y^3, X^3, W^3\}`
 
 **Stage 3**
 
-Repeat Stage 1 and Stage 2 again twice. First use :math:`\{Y^2, X^2, W^2\}`, :math:`\{Y^3, X^3, W^3\}`, and :math:`\{Y^1, X^1, W^1\}` for the propensity score model, the outcome models, and the CATE model. Then use :math:`\{Y^3, X^3, W^3\}`, :math:`\{Y^2, X^2, W^2\}`, and :math:`\{Y^1, X^1, W^1\}` for the propensity score model, the outcome models, and the CATE model. The final CATE model is the average of the 3 CATE models.
+Repeat Stage 1 and Stage 2 again twice, rotating the three partitions so that each one trains the CATE model exactly once. First use :math:`\{Y^2, X^2, W^2\}`, :math:`\{Y^3, X^3, W^3\}`, and :math:`\{Y^1, X^1, W^1\}` for the propensity score model, the outcome models, and the CATE model. Then use :math:`\{Y^3, X^3, W^3\}`, :math:`\{Y^1, X^1, W^1\}`, and :math:`\{Y^2, X^2, W^2\}` for the propensity score model, the outcome models, and the CATE model. The final CATE model is the average of the 3 CATE models.
 
 Doubly Robust Instrumental Variable (DRIV) learner
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -139,11 +183,11 @@ We combine the idea from DR-learner :cite:`kennedy2020optimal` with the doubly r
 
 **Stage 1**
 
-Fit propensity score models :math:`\hat{e}_0(x)` and :math:`\hat{e}_1(x)` for assigned and unassigned users using :math:`\{X^1, W^1, Z^1\}`, and fit outcome regression models :math:`\hat{m}_0(x)` and :math:`\hat{m}_1(x)` for assigned and unassigned users with machine learning using :math:`\{Y^2, X^2, Z^2\}`. Assignment probabiliy, :math:`p_Z`, can either be user provided or come from a simple model, since in most use cases assignment is random by design.
+Fit propensity score models :math:`\hat{e}_0(x)` and :math:`\hat{e}_1(x)` for assigned and unassigned users using :math:`\{X^1, W^1, Z^1\}`, and fit outcome regression models :math:`\hat{m}_0(x)` and :math:`\hat{m}_1(x)` for assigned and unassigned users with machine learning using :math:`\{Y^2, X^2, Z^2\}`. Assignment probability, :math:`p_Z`, can either be user provided or come from a simple model, since in most use cases assignment is random by design.
 
 **Stage 2**
 
-Use machine learning to fit the conditional :ref:`LATE` model, :math:`\hat{\tau}(X)` by minimizing the following loss function
+Use machine learning to fit the conditional :ref:`LATE <methodology:LATE>` model, :math:`\hat{\tau}(X)` by minimizing the following loss function
 
 .. math::
    L(\hat{\tau}(X)) = \hat{E} &\left[\left(\hat{m}_1(X)-\hat{m}_0(X)+\frac{Z(Y-\hat{m}_1(X))}{p_Z}-\frac{(1-Z)(Y-\hat{m}_0(X))}{1-p_Z} \right.\right.\\
@@ -155,8 +199,123 @@ with :math:`\{Y^3, X^3, W^3\}`
 
 Similar to the DR-Learner Repeat Stage 1 and Stage 2 again twice with different permutations of partitions for estimation. The final conditional LATE model is the average of the 3 conditional LATE models.
 
+CATE Model Evaluation
+----------------------
+
+Cross-validation cannot be used to select among fitted CATE models because the
+ground-truth treatment effect is never observed for any unit -- only one of the
+two potential outcomes is realized. The methods below are surrogate metrics that
+score fitted CATE models using only observed data, so that models such as the
+S/T/X/R/DR-learners above can be compared and selected among.
+
+These metrics evaluate *effect-magnitude accuracy* -- how close a model's CATE
+estimate is to the truth -- which is a distinct question from *targeting
+quality* -- whether a model correctly ranks units by benefit -- addressed by
+:ref:`RATE <methodology:RATE>`.
+
+DR (Doubly Robust) pseudo-outcome loss
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Following :cite:`kennedy2020optimal`, we construct the same doubly-robust
+pseudo-outcome used in the DR-learner above,
+
+.. math::
+   \phi = \frac{W-\hat{e}(X)}{\hat{e}(X)(1-\hat{e}(X))}\left(Y-\hat{m}_W(X)\right)+\hat{m}_1(X)-\hat{m}_0(X)
+
+with :math:`\hat{e}(x)`, :math:`\hat{m}_0(x)`, and :math:`\hat{m}_1(x)` cross-fit
+so that :math:`\phi_i` never depends on a model that saw unit :math:`i` during
+training. Under either correct propensity or correct outcome-model
+specification, :math:`E[\phi \mid X]` is an unbiased estimate of the true CATE,
+which lets :math:`\phi` stand in for the unobserved ground truth when scoring a
+fitted CATE model :math:`\hat\tau(x)`:
+
+.. math::
+   \text{DR loss}(\hat\tau) = \frac{1}{n}\sum_i \left(\hat\tau(X_i) - \phi_i\right)^2
+
+Lower is better. :cite:`mahajan2024empirical` found DR-based metrics dominate
+across 78 benchmark datasets for CATE model selection.
+
+Plug-in T-learner loss
+~~~~~~~~~~~~~~~~~~~~~~
+
+A simpler, non-doubly-robust baseline: fit a cross-fit :ref:`T-Learner <methodology:T-Learner>`, and use
+its held-out estimate :math:`\hat\mu_1(x) - \hat\mu_0(x)` directly as a proxy
+for the true CATE:
+
+.. math::
+   \text{T-loss}(\hat\tau) = \frac{1}{n}\sum_i \left(\hat\tau(X_i) - (\hat\mu_1(X_i) - \hat\mu_0(X_i))\right)^2
+
+This is biased under a misspecified outcome model, unlike the DR loss above.
+Despite that, :cite:`mahajan2024empirical` found it is never dominated across
+their benchmark datasets, making it a useful complement to DR-based scoring
+rather than a replacement.
+
+RATE
+~~~~
+
+The Rank-Weighted Average Treatment Effect (RATE) of
+:cite:`yadlowsky2021evaluating` scores a model as a *targeting rule*: not how
+close :math:`\hat\tau(x)` is to the truth, but whether the units it ranks
+highest are the ones that benefit most.
+
+Rank units by a prioritization score :math:`\hat\tau(x)`, treat the top
+:math:`q` fraction, and measure the gain over treating everyone. That is the
+Targeting Operator Characteristic (TOC) curve:
+
+.. math::
+   \text{TOC}(q) = E\left[Y(1)-Y(0) \mid \hat\tau(X) \ge F^{-1}_{\hat\tau}(1-q)\right] - E\left[Y(1)-Y(0)\right]
+
+where :math:`F^{-1}_{\hat\tau}(1-q)` is the :math:`(1-q)` quantile of the
+score, so the conditioning set is exactly the top-:math:`q` fraction.
+:math:`\text{TOC}(1) = 0` by construction, since selecting everyone gives back
+the overall ATE, and a curve that is positive at small :math:`q` means the rule
+has found units with above-average benefit. RATE reduces the curve to a single
+number with a weight function :math:`\alpha(q)`:
+
+.. math::
+   \text{RATE} = \int_0^1 \alpha(q)\,\text{TOC}(q)\,dq
+
+Two weightings are implemented, and the choice between them is one of
+statistical power rather than correctness:
+
+- ``weighting="autoc"`` (the default) sets :math:`\alpha(q) = 1/q`. It weights
+  the highest-priority units most heavily and is most powerful when the benefit
+  is concentrated in a small subgroup.
+- ``weighting="qini"`` sets :math:`\alpha(q) = q`, which recovers the Qini
+  coefficient. It is more powerful when treatment effects are diffuse across
+  the population.
+
+``causalml.metrics.rate_score`` returns the scalar;
+``causalml.metrics.get_toc`` and ``causalml.metrics.plot_toc`` return and draw
+the curve behind it. The integral is evaluated on the discrete quantile grid as
+a midpoint-weighted mean whose weights are normalized to sum to one, so the
+absolute scale can differ slightly from the continuous definition above while
+the ordering of models is unchanged.
+
+Passing ``return_ci=True`` adds a standard error, a confidence interval and a
+p-value for :math:`H_0: \text{RATE} = 0` -- the null that the ranking is no
+better than random -- from a half-sample bootstrap that draws :math:`n/2` units
+without replacement, the resampling scheme covered by the functional central
+limit theorem in :cite:`yadlowsky2021evaluating`.
+
+One assumption is easy to miss: without a ground-truth effect column, the
+subset ATE inside the TOC is a plain difference in mean outcomes between the
+treated and control units of each band, which is unbiased under randomization
+but not under confounding. For observational data, pass cross-fit AIPW
+pseudo-outcomes -- the same :math:`\phi` as in the DR loss above -- as
+``treatment_effect_col``, so that the ranking is scored against a
+doubly-robust estimate rather than a raw difference in means.
+
 Tree-Based Algorithms
 ---------------------
+
+*Relevant classes:* the uplift trees ``UpliftTreeClassifier`` and
+``UpliftRandomForestClassifier``, which split on the divergence criteria below,
+and the causal trees ``CausalTreeRegressor`` and
+``CausalRandomForestRegressor``, regression trees that split on
+treatment-effect heterogeneity and estimate leaves honestly by default (see
+:ref:`Honest estimation <methodology:Honest estimation>`). All live in
+``causalml.inference.tree``.
 
 Uplift Tree
 ~~~~~~~~~~~
@@ -168,21 +327,30 @@ The Uplift Tree approach consists of a set of methods that use a tree-based algo
 
 where :math:`D` measures the divergence and :math:`P^T` and :math:`P^C` refer to the probability distribution of the outcome of interest in the treatment and control groups, respectively. Three different ways to quantify the divergence, KL, ED and Chi, are implemented in the package.
 
+Throughout this subsection the outcome is binary, so :math:`P^T` and :math:`P^C`
+are each described by a single number: let :math:`p` be the sample mean of the
+outcome in the treatment group and :math:`q` the sample mean in the control
+group, both computed within the node being scored. Each divergence below sums
+over the two outcome classes :math:`\{1, 0\}` -- which is where the second term
+in each expression comes from -- and :math:`D_{gain}` then combines the parent's
+divergence with its children's as above :cite:`Gutierrez2016-co`.
+
 KL
 ~~~
 The Kullback-Leibler (KL) divergence is given by:
 
 .. math::
-   KL(P : Q) = \sum_{k=left, right}p_klog\frac{p_k}{q_k}
+   KL(P^T : P^C) = p\log\frac{p}{q} + (1-p)\log\frac{1-p}{1-q}
 
-where :math:`p` is the sample mean in the treatment group, :math:`q` is the sample mean in the control group and :math:`k` indicates the leaf in which :math:`p` and :math:`q` are computed :cite:`Gutierrez2016-co`
+At :math:`p = 0` and :math:`p = 1` the expression is taken at its limit,
+:math:`-\log(1-q)` and :math:`-\log q` respectively.
 
 ED
 ~~~
 The Euclidean Distance is given by:
 
 .. math::
-   ED(P : Q) = \sum_{k=left, right}(p_k - q_k)^2
+   ED(P^T : P^C) = (p - q)^2 + \big((1-p) - (1-q)\big)^2 = 2(p - q)^2
 
 where the notation is the same as above.
 
@@ -191,7 +359,7 @@ Chi
 Finally, the :math:`\chi^2`-divergence is given by:
 
 .. math::
-   \chi^2(P : Q) = \sum_{k=left, right}\frac{(p_k - q_k)^2}{q_k}
+   \chi^2(P^T : P^C) = \frac{(p - q)^2}{q} + \frac{(p - q)^2}{1 - q}
 
 where the notation is again the same as above.
 
@@ -205,7 +373,70 @@ Another Uplift Tree algorithm that is implemented is the delta-delta-p (:math:`\
 
 where :math:`a_0` and :math:`a_1` are the outcomes of a Split A, :math:`y` is the selected class, and :math:`P^T` and :math:`P^C` are the response rates of treatment and control group, respectively. In other words, we first calculate the difference in the response rate in each branch (:math:`\Delta P_{left}` and :math:`\Delta P_{right}`), and subsequently, calculate their differences (:math:`\Delta\Delta P = |\Delta P_{left} - \Delta P_{right}|`).
 
+IDDP
+~~~~
 
+Build upon the :math:`\Delta\Delta P` approach, the IDDP approach by :cite:`rossler2022the` is implemented, where the sample splitting
+criterion is defined as follows:
+
+.. math::
+    IDDP = \frac{\Delta\Delta P^*}{I(\phi, \phi_l, \phi_r)}
+
+where :math:`\Delta\Delta P^*` is defined as :math:`\Delta\Delta P - |E[Y(1) - Y(0) \mid X \in \phi]|` and
+:math:`I(\phi, \phi_l, \phi_r)` is defined as:
+
+.. math::
+    I(\phi, \phi_l, \phi_r) = H(\frac{n_t(\phi)} {n(\phi)}, \frac{n_c(\phi)}{n(\phi)}) * 2 \frac{1+\Delta\Delta P^*}{3} + \frac{n_t(\phi)}{n(\phi)} H(\frac{n_t(\phi_l)}{n(\phi)}, \frac{n_t(\phi_r)}{n(\phi)}) \\
+    + \frac{n_c(\phi)}{n(\phi)} * H(\frac{n_c(\phi_l)}{n(\phi)}, \frac{n_c(\phi_r)}{n(\phi)}) + \frac{1}{2}
+
+where the entropy H is defined as :math:`H(p,q)=(-p*log_2(p)) + (-q*log_2(q))` and where :math:`\phi` is a subset of the feature space
+associated with the current decision node, and :math:`\phi_l` and :math:`\phi_r` are the left and right child nodes, respectively.
+:math:`n_t(\phi)` is the number of treatment samples, :math:`n_c(\phi)` the number of control samples, and :math:`n(\phi)` the number
+of all samples in the current (parent) node.
+
+IT
+~~
+
+Further, the package implements the Interaction Tree (IT) proposed by :cite:`su2009subgroup`, where the sample splitting criterion
+maximizes the G statistic among all permissible splits:
+
+.. math::
+    G(s^*) = \max_s G(s)
+
+where :math:`G(s)=t^2(s)` and :math:`t(s)` is defined as:
+
+.. math::
+    t(s) = \frac{(y^L_1 - y^L_0) - (y^R_1 - y^R_0)}{\sigma \sqrt{1/n_1 + 1/n_2 + 1/n_3 + 1/n_4}}
+
+where :math:`\sigma=\sqrt{\sum_{i=1}^4 w_i s_i^2}` is a pooled estimator of the constant standard deviation, and :math:`w_i=(n_i-1)/\sum_{j=1}^4(n_j-1)`.
+Further, :math:`y^L_1`, :math:`s^2_1`, and :math:`n_1` are the sample mean, the sample variance, and the sample size
+for the treatment group in the left child node, respectively. Similar notation applies to the other quantities.
+
+Note that this implementation deviates from the original implementation in that (1) the pruning techniques and (2) the validation method
+for determining the best tree size are different.
+
+CIT
+~~~
+
+Also, the package implements the Causal Inference Tree (CIT) by :cite:`su2012facilitating`, where the sample splitting
+criterion calculates the likelihood ratio test statistic:
+
+.. math::
+    LRT(s) = -n_{\tau L}/2 * ln(n_{\tau L} SSE_{\tau L}) -n_{\tau R}/2 * ln(n_{\tau R} SSE_{\tau R}) + \\
+    n_{\tau L1} ln n_{\tau L1} + n_{\tau L0} ln n_{\tau L0} + n_{\tau R1} ln n_{\tau R1} + n_{\tau R0} ln n_{\tau R0}
+
+where :math:`n_{\tau}`, :math:`n_{\tau 0}`, and :math:`n_{\tau 1}` are the total number of observations in node :math:`\tau`,
+the number of observations in node :math:`\tau` that are assigned to the control group, and the number of observations in node :math:`\tau`
+that are assigned to the treatment group, respectively. :math:`SSE_{\tau}` is defined as:
+
+.. math::
+    SSE_{\tau} = \sum_{i \in \tau: t_i=1}(y_i - \hat{y_{t1}})^2 + \sum_{i \in \tau: t_i=0}(y_i - \hat{y_{t0}})^2
+
+and :math:`\hat{y_{t0}}` and :math:`\hat{y_{t1}}` are the sample average responses of the control and treatment groups in node
+:math:`\tau`, respectively.
+
+Note that this implementation deviates from the original implementation in that (1) the pruning techniques and (2) the validation method
+for determining the best tree size are different.
 
 CTS
 ~~~
@@ -217,38 +448,197 @@ The final Uplift Tree algorithm that is implemented is the Contextual Treatment 
 
 where :math:`\phi_l` and :math:`\phi_r` refer to the feature subspaces in the left leaf and the right leaves respectively, :math:`\hat{p}(\phi_j \mid \phi)` denotes the estimated conditional probability of a subject's being in :math:`\phi_j` given :math:`\phi`, and :math:`\hat{y}_t(\phi_j)` is the conditional expected response under treatment :math:`t`.
 
+Honest estimation
+~~~~~~~~~~~~~~~~~
+
+A tree that estimates each leaf's treatment effect on the same rows that chose
+its splits inherits the selection bias of the split search: the search favors
+partitions whose in-sample effects look large, so re-using those rows makes the
+leaf estimates systematically too extreme. *Honest estimation*
+:cite:`athey2016recursive` removes this bias by splitting the sample in two --
+the tree structure is grown on one half and each leaf's per-group outcome means
+are re-estimated on the other -- at the cost of fitting each half with less
+data.
+
+``CausalTreeRegressor`` and ``CausalRandomForestRegressor`` estimate honestly
+by default (``honesty=True``), matching the defaults of ``grf`` and EconML.
+``UpliftTreeClassifier`` and ``UpliftRandomForestClassifier`` accept the same
+parameters with ``honesty=False`` by default. ``estimation_sample_size``
+(default ``0.5``) sets the held-out fraction, and the split is stratified on
+treatment.
+
+The trade is variance: each half sees only part of the data, so an honest tree
+is shallower and noisier per leaf. Pass ``honesty=False`` when halving the
+sample leaves too little to split on.
+
+On ``CausalRandomForestRegressor``, honesty composes with the bootstrap: each
+tree's bootstrap counts weight both the structure fit and the leaf
+re-estimation. This is not the subsample-without-replacement scheme of
+generalized random forests :cite:`athey2019generalized`.
+
+Pruning
+~~~~~~~
+
+Both tree families grow greedily and can overfit. Each offers a
+validation-based way to cut the fitted tree back; both are off by default
+because they change fitted trees.
+
+``UpliftTreeClassifier`` prunes against a held-out sample:
+``prune(X, treatment, y)`` collapses an internal node whose split does not
+improve the treatment-effect estimate on that sample, controlled by
+``min_gain`` and ``prune_rule``, cascading upward until no further merge helps.
+Passing ``prune_fraction`` to ``fit`` runs the same procedure as part of the
+fit: that fraction of the rows is held out, stratified on treatment and
+outcome, the tree grows on the remainder, and pruning uses the holdout.
+
+``CausalTreeRegressor`` uses cost-complexity pruning, the scheme behind
+scikit-learn's ``ccp_alpha``: a penalty per leaf defines a sequence of nested
+subtrees, and a larger ``ccp_alpha`` keeps a smaller one. Setting
+``ccp_alpha="cv"`` selects the subtree by ``cv_folds``-fold cross-validation
+instead, scoring each candidate with the honest splitting objective on the
+held-out fold; it requires ``honesty=True`` and completes the algorithm of
+:cite:`athey2016recursive`. Prefer it on a single tree, where the gains grow
+with the noise level -- on ``CausalRandomForestRegressor`` the same option
+measured no gain, since averaging across trees already removes the variance
+that pruning targets.
+
+
+Neural Network Algorithms
+-------------------------
+
+*Relevant classes:* ``DragonNet`` in ``causalml.inference.tf`` or
+``causalml.inference.jax``, and ``CEVAE`` in ``causalml.inference.torch`` or
+``causalml.inference.jax``.
+
+Both methods below are optional backends. Install them with the ``tf``, ``torch``
+or ``jax`` extras, e.g. ``pip install causalml[tf]``.
+
+CEVAE
+~~~~~
+
+The Causal Effect Variational Autoencoder (CEVAE) :cite:`louizos2017causal`
+targets the case where the confounders are never observed directly. Instead of
+assuming that the covariates :math:`X` satisfy unconfoundedness, it assumes
+:math:`X` are noisy **proxies** for a latent confounder :math:`Z` — for example,
+a zip code standing in for socio-economic status — and recovers the treatment
+effect by inferring :math:`Z`.
+
+The generative model is
+
+.. math::
+   Z \sim p(Z), \quad
+   X \sim p(X \mid Z), \quad
+   W \sim p(W \mid Z), \quad
+   Y \sim p(Y \mid W, Z)
+
+where each distribution is parameterised by a neural network. The outcome model
+uses a disjoint pair of networks for :math:`p(Y \mid W=0, Z)` and
+:math:`p(Y \mid W=1, Z)`, so a treatment arm with few observations does not have
+its outcome head diluted by the other arm.
+
+Because :math:`Z` is latent, the posterior :math:`p(Z \mid X, W, Y)` is
+intractable. CEVAE approximates it with an inference network
+:math:`q(Z \mid X, W, Y)` trained jointly with the generative model by
+maximising the evidence lower bound (ELBO). Two auxiliary networks,
+:math:`q(W \mid X)` and :math:`q(Y \mid X, W)`, are trained alongside it, because
+at prediction time only :math:`X` is available: the treatment and outcome that
+the inference network expects have to be supplied by the auxiliary heads before
+:math:`Z` can be inferred for a new unit.
+
+The CATE estimate marginalises the outcome heads over the inferred latent:
+
+.. math::
+   \hat\tau(x) = \mathbb{E}_{Z \sim q(Z \mid X=x)}
+       \big[\mathbb{E}[Y \mid W=1, Z] - \mathbb{E}[Y \mid W=0, Z]\big]
+
+CausalML wraps Pyro's implementation in ``causalml.inference.torch.CEVAE`` and
+also ships a JAX/``flax.nnx`` backend.
+
+DragonNet
+~~~~~~~~~
+
+DragonNet :cite:`shi2019adapting` starts from the sufficiency of the propensity
+score: if adjusting for :math:`X` suffices to identify the treatment effect, then
+adjusting for :math:`e(X) = P(W=1 \mid X)` alone also suffices. A representation
+of :math:`X` therefore only has to retain what predicts treatment, and a
+representation trained purely to predict the outcome may discard exactly that.
+
+The architecture makes this explicit with three heads on a shared trunk
+:math:`Z(x)` of three fully-connected layers:
+
+- a **propensity head** :math:`\hat{e}(x)`, a single sigmoid unit on
+  :math:`Z(x)`;
+- two **outcome heads** :math:`\hat{Q}(0, x)` and :math:`\hat{Q}(1, x)`, each its
+  own stack of layers.
+
+Attaching the propensity head directly to :math:`Z(x)` — with no hidden layer of
+its own — is what forces the shared trunk to keep the propensity information
+rather than discarding it in favour of outcome prediction.
+
+The second contribution is **targeted regularization**, which adds a trainable
+scalar :math:`\epsilon` and an extra loss term. Writing
+:math:`\hat{y} = w\hat{Q}(1,x) + (1-w)\hat{Q}(0,x)` and
+
+.. math::
+   h(w, x) = \frac{w}{\hat{e}(x)} - \frac{1-w}{1 - \hat{e}(x)}
+
+the perturbed prediction is :math:`\tilde{y} = \hat{y} + \epsilon \, h(w, x)`, and
+the training objective becomes
+
+.. math::
+   \mathcal{L} = \mathcal{L}_{\text{DragonNet}}
+       + \beta \sum_i \big(y_i - \tilde{y}_i\big)^2
+
+with :math:`\beta` the ``ratio`` argument. This is a one-step correction in the
+spirit of :ref:`TMLE <methodology:Targeted maximum likelihood estimation (TMLE) for ATE>`:
+at the optimum the fitted model satisfies the estimating equation for the ATE,
+which is what gives the resulting estimator its asymptotic guarantees. It is
+enabled by default via ``targeted_reg=True``.
+
+The CATE estimate is the difference of the two outcome heads:
+
+.. math::
+   \hat\tau(x) = \hat{Q}(1, x) - \hat{Q}(0, x)
+
+CausalML ships DragonNet as ``causalml.inference.tf.DragonNet`` (TensorFlow) and
+a JAX/``flax.nnx`` backend.
+
 Value optimization methods
 --------------------------
 
-The package supports methods for assigning treatment groups when treatments are costly. To understand the problem, it is helpful to divide populations into the following four categories:
+*Relevant classes:* ``CounterfactualUnitSelector`` and
+``CounterfactualValueEstimator`` in ``causalml.optimize``. ``PolicyLearner``
+in the same module learns a treatment-assignment policy directly.
 
-* **Compliers**. Those who will have a favourable outcome if and only if they are treated.
-* **Always-takers**. Those who will have a favourable outcome whether or not they are treated.
-* **Never-takers**. Those who will never have a favourable outcome whether or not they are treated.
-* **Defiers**. Those who will have a favourable outcome if and only if they are not treated.
+The package supports methods for assigning treatment groups when treatments are costly. To understand the problem, it is helpful to divide the population into four categories according to how a unit's *outcome* responds to being treated:
 
-For a more detailed discussion see e.g. :cite:`angrist2008mostly`.
+* **Persuadables**. Those who will have a favourable outcome if and only if they are treated.
+* **Sure things**. Those who will have a favourable outcome whether or not they are treated.
+* **Lost causes**. Those who will never have a favourable outcome whether or not they are treated.
+* **Sleeping dogs**. Those who will have a favourable outcome if and only if they are not treated.
+
+These four response types are also referred to as compliers, always-takers, never-takers and defiers. Note that those names are standard in the instrumental variables literature for a **different** partition of the population -- one defined by whether a unit *takes* the treatment in response to its *assignment*, which is the sense used in the :ref:`LATE <methodology:LATE>` section below (see :cite:`angrist2008mostly` for that one). The two partitions do not coincide, so the uplift names are used here.
 
 Counterfactual Unit Selection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 :cite:`ijcai2019-248` propose a method for selecting units for treatments using counterfactual logic. Suppose the following benefits for selecting units belonging to the different categories above:
 
-* Compliers: :math:`\beta`
-* Always-takers: :math:`\gamma`
-* Never-takers: :math:`\theta`
-* Defiers: :math:`\delta`
+* Persuadables: :math:`\beta`
+* Sure things: :math:`\gamma`
+* Lost causes: :math:`\theta`
+* Sleeping dogs: :math:`\delta`
 
 If :math:`X` denotes the set of individual's features, the unit selection problem can be formulated as follows:
 
 .. math::
-   argmax_X \beta P(\text{complier} \mid X) + \gamma P(\text{always-taker} \mid X) + \theta P(\text{never-taker} \mid X) + \delta P(\text{defier} \mid X)
+   \operatorname*{argmax}_X \beta P(\text{persuadable} \mid X) + \gamma P(\text{sure thing} \mid X) + \theta P(\text{lost cause} \mid X) + \delta P(\text{sleeping dog} \mid X)
 
 The problem can be reformulated using counterfactual logic. Suppose :math:`W = w` indicates that an individual is treated and :math:`W = w'` indicates he or she is untreated. Similarly, let :math:`F = f` denote a favourable outcome for the individual and :math:`F = f'` an unfavourable outcome. Then the optimization problem becomes:
 
 .. math::
-   argmax_X \beta P(f_w, f'_{w'} \mid X) + \gamma P(f_w, f_{w'} \mid X) + \theta P(f'_w, f'_{w'} \mid X) + \delta P(f_{w'}, f'_{w} \mid X)
+   \operatorname*{argmax}_X \beta P(f_w, f'_{w'} \mid X) + \gamma P(f_w, f_{w'} \mid X) + \theta P(f'_w, f'_{w'} \mid X) + \delta P(f_{w'}, f'_{w} \mid X)
 
-Note that the above simply follows from the definitions of the relevant users segments. :cite:`ijcai2019-248` then use counterfactual logic (:cite:`pearl2009causality`) to solve the above optimization problem under certain conditions.
+Note that the above simply follows from the definitions of the relevant user segments. :cite:`ijcai2019-248` then use counterfactual logic (:cite:`pearl2009causality`) to solve the above optimization problem under certain conditions.
 
 N.B. The current implementation in the package is highly experimental.
 
@@ -261,8 +651,64 @@ The counterfactual value estimation method implemented in the package predicts t
 
 where :math:`Y_w` is the probability of a favourable event (such as conversion) under a given treatment :math:`w`, :math:`v` is the value of the favourable event, :math:`cc_w` is the cost of the treatment triggered in case of a favourable event, and :math:`ic_w` is the cost associated with the treatment whether or not the outcome is favourable. This method builds upon the ideas discussed in :cite:`zhao2019uplift`.
 
+Probabilities of causation
+--------------------------
+
+A cause is said to be *necessary* for an outcome if the outcome would not have occurred in the absence of the cause. A cause is said to be *sufficient* for an outcome if the outcome would have occurred in the presence of the cause. A cause is said to be *necessary and sufficient* if both of the above two conditions hold. :cite:`tian2000probabilities` show that we can calculate bounds for the probability that a cause is of each of the above three types.
+
+To understand how the bounds for the probabilities of causation are calculated, we need special notation to represent counterfactual quantities. Let :math:`y_t` represent the proposition “:math:`y` would occur if the treatment group was set to ‘treatment’”, :math:`y^{\prime}_c` represent the proposition “:math:`y` would not occur if the treatment group was set to ‘control’”, and similarly for the remaining two combinations of the (by assumption) binary outcome and treatment variables.
+
+Then the probability that the treatment is *sufficient* for :math:`y` to occur can be defined as
+
+.. math::
+
+    PS = P(y_t \mid c, y^{\prime})
+
+This is the probability that the :math:`y` would occur if the treatment was set to :math:`t` when in fact the treatment was set to control and the outcome did not occur.
+
+The probability that the treatment is *necessary* for :math:`y` to occur can be defined as
+
+.. math::
+    PN = P(y^{\prime}_c \mid t, y)
+
+This is the probability that :math:`y` would not occur if the treatment was set to control, while in actuality both :math:`y` occurs and the treatment takes place.
+
+Finally, the probability that the treatment is both necessary and sufficient is defined as 
+
+.. math::
+    PNS = P(y_t, y^{\prime}_c)
+
+and states that :math:`y` would occur if the treatment took place; and :math:`y` would not occur if the treatment did not take place. PNS is related with PN and PS as follows:
+
+.. math::
+    PNS = P(t, y)PN + P(c, y^{\prime})PS
+
+In bounding the above three quantities, we utilize observational data in addition to experimental data. The observational data is characterized in terms of the joint probabilities:
+
+.. math::
+    P_{TY} = {P(t, y),  P(c, y), P(t, y^{\prime}), P(c, y^{\prime})}
+
+Given this, :cite:`tian2000probabilities` use the program developed in :cite:`balke1995probabilistic` to obtain sharp bounds of the above three quantities. The main idea in this program is to turn the bounding task into a linear programming problem (for a modern implementation of their approach see `here <https://cran.r-project.org/web/packages/causaloptim/vignettes/vertexenum-speed.html>`_).
+
+Using the linear programming approach and given certain constraints together with observational data, :cite:`tian2000probabilities` find that the sharp lower bound for PNS is given by
+
+.. math::
+    \max\{0, P(y_t) - P(y_c), P(y) - P(y_c), P(y_t) - P(y)\}
+
+and the sharp upper bound is given by
+
+.. math::
+    \min\{P(y_t), P(y^{\prime}_c), P(t, y) + P(c, y^{\prime}), P(y_t) - P(y_c) + P(t, y^{\prime}) + P(c, y)\}
+
+They use a similar routine to find the bounds for PS and PN. The `get_pns_bounds()` function calculates the bounds for each of the three probabilities of causation using the results in :cite:`tian2000probabilities`.
+
 Selected traditional methods
 ----------------------------
+
+*Relevant classes:* ``NearestNeighborMatch`` and ``MatchOptimizer`` in
+``causalml.match``, the propensity models in ``causalml.propensity``,
+``IVRegressor`` in ``causalml.inference.iv`` for 2SLS, and ``TMLELearner`` in
+``causalml.inference.meta``.
 
 The package supports selected traditional causal inference methods. These are usually used to conduct causal inference with observational (non-experimental) data. In these types of studies, the observed difference between the treatment and the control is in general not equal to the difference between "potential outcomes" :math:`\mathbb{E}[Y(1) - Y(0)]`. Thus, the methods below try to deal with this problem in different ways.
 
@@ -311,18 +757,18 @@ The most common method for instrumental variables estimation is the two-stage le
 Here for convenience we let :math:`\Xi=[W, X]` and :math:`\gamma=[\alpha', \beta']'`. Assume that we have instrumental variables :math:`Z` whose number of columns is at least the number of columns of :math:`W`, let :math:`\Omega=[Z, X]`, 2SLS estimator is as follows
 
 .. math::
-   \hat{\gamma}_{2SLS} = \left[\Xi'\Omega (\Omega'\Omega)^{-1} \Omega' \Xi\right]^{-1}\left[\Xi'\Omega'(\Omega'\Omega)^{-1}\Omega'Y\right].
+   \hat{\gamma}_{2SLS} = \left[\Xi'\Omega (\Omega'\Omega)^{-1} \Omega' \Xi\right]^{-1}\left[\Xi'\Omega(\Omega'\Omega)^{-1}\Omega'Y\right].
 
 See :cite:`10.1257/jep.15.4.69` for a detailed discussion of the method.
 
 LATE
 ~~~~
 
-In many situations the treatment :math:`W` may depend on user's own choice and cannot be administered directly in an experimental setting. However one can randomly assign users into treatment/control groups so that users in the treatment group can be nudged to take the treatment. This is the case of noncompliance, where users may fail to comply with their assignment status, :math:`Z`, as to whether to take treatment or not. Similar to the section of Value optimization methods, in general there are 3 types of users in this situation,
+In many situations the treatment :math:`W` may depend on subject's own choice and cannot be administered directly in an experimental setting. However one can randomly assign users into treatment/control groups so that users in the treatment group can be nudged to take the treatment. This is the case of noncompliance, where users may fail to comply with their assignment status, :math:`Z`, as to whether to take treatment or not. In general there are 3 types of users in this situation, classified by whether they *take* the treatment in response to their assignment:
 
 * **Compliers** Those who will take the treatment if and only if they are assigned to the treatment group.
-* **Always-Taker** Those who will take the treatment regardless which group they are assigned to.
-* **Never-Taker** Those who wil not take the treatment regardless which group they are assigned to.
+* **Always-Takers** Those who will take the treatment regardless of which group they are assigned to.
+* **Never-Takers** Those who will not take the treatment regardless of which group they are assigned to.
 
 However one assumes that there is no Defier for identification purposes, i.e. those who will only take the treatment if they are assigned to the control group.
 
@@ -354,8 +800,8 @@ Scale :math:`Y` into :math:`\tilde{Y}=\frac{Y-\min Y}{\max Y - \min Y}` so that 
 Let :math:`Q=\log(\tilde{m}_W(X)/(1-\tilde{m}_W(X)))`. Maximize the following pseudo log-likelihood function
 
 .. math::
-   \max_{h_0, h_1} -\frac{1}{N} \sum_i & \left[ \tilde{Y}_i \log \left(1+\exp(-Q_i-h_0 \frac{1-W}{1-\hat{e}(X_i)}-h_1 \frac{W}{\hat{e}(X_i)} \right) \right. \\
-   &\quad\left.+(1-\tilde{Y}_i)\log\left(1+\exp(Q_i+h_0\frac{1-W}{1-\hat{e}(X_i)}+h_1\frac{W}{\hat{e}(X_i)}\right)\right]
+   \max_{h_0, h_1} -\frac{1}{N} \sum_i & \left[ \tilde{Y}_i \log \left(1+\exp\left(-Q_i-h_0 \frac{1-W}{1-\hat{e}(X_i)}-h_1 \frac{W}{\hat{e}(X_i)}\right) \right) \right. \\
+   &\quad\left.+(1-\tilde{Y}_i)\log\left(1+\exp\left(Q_i+h_0\frac{1-W}{1-\hat{e}(X_i)}+h_1\frac{W}{\hat{e}(X_i)}\right)\right)\right]
 
 **Step 4**
 
